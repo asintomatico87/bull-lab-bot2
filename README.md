@@ -1,63 +1,74 @@
-# Bull Lab Trading System
+# Bull Lab Trading System — VAPI Ladder 3H
 
-Cruscotto di trading automatizzato per Bitcoin ed Ethereum, con tema Bull Lab
-(Powered by AltcoinItalia · by Asintomatico).
+Cruscotto + esecutore per la strategia **VAPI LazyBear (periodo 10)** su **BTC** ed **ETH**, timeframe **3H**.
+Webhook TradingView → motore regole → Hyperliquid (paper/live). Next.js 16 (App Router) + PostgreSQL/Drizzle.
 
-- **Strategia core:** VAPI Ladder 3H di LazyBear (martingala 1x / 1,5x / 2,5x a −25 / −32 / −40)
-- **Trigger ibrido:** buy intrabar appena tocca il livello, sell solo alla chiusura della candela 3H
-- **Ponte TradingView:** webhook con secret per bot, validazione server-side dei livelli
-- **Modalità senza TradingView:** Auto-Pilot 3H che legge le candele dall'exchange
-- **Exchange:** Hyperliquid DEX (No-KYC), OurBit, Bitbase, Bybit
+> Deploy passo passo: **[DEPLOY.md](./DEPLOY.md)**. Script di sovrascrittura repo: `scripts/deploy-github.sh`.
 
-## Avvio in locale
+## Regole implementate
 
-Il modo più rapido (dalla radice del progetto):
+**BUY** (intrabar, al tocco del livello) — ladder in ordine, size su base USD (default 500 USDT):
 
-```bash
-bash setup.sh
-```
+| Rung | VAPI | Size |
+|---|---|---|
+| 1 | ≤ −25 | 1× |
+| 2 | ≤ −32 | 1,5× |
+| 3 | ≤ −40 | 2,5× |
 
-Fa tutto: controlla Node, installa le dipendenze, crea `.env`, crea le tabelle,
-carica i dati iniziali e avvia il cruscotto su http://localhost:3000.
+- max 3 BUY per ciclo, nessuno stop loss;
+- un solo BUY per candela 3H;
+- ogni rung si riempie una volta sola e solo se è il prossimo del ladder;
+- dopo una vendita parziale il ciclo non accetta altri BUY.
 
-In alternativa, a mano:
+**SELL** (solo a candela 3H confermata), sui livelli VAPI:
 
-```bash
-npm install
-cp .env.example .env.local     # inserisci la tua DATABASE_URL
-npx drizzle-kit push           # crea le tabelle
-node src/db/run-seed.js        # dati iniziali
-npm run dev                    # http://localhost:3000
-```
-
-## Messo online
-
-Guida completa passo-passo in [DEPLOYMENT.md](./DEPLOYMENT.md):
-GitHub → Neon/Supabase → Vercel → sottodominio one.com → TradingView.
-
-Script pronti, senza token da digitare:
-
-```bash
-bash scripts/publish-github.sh   # crea il repo privato e carica il codice (login dal browser)
-bash scripts/deploy-vercel.sh    # in alternativa: pubblica su Vercel senza GitHub
-```
-
-Nel cruscotto, scheda **Vai Live (Facile)**, la stessa procedura è interattiva
-e mostra lo stato di prontezza su `/api/config-status`.
-
-## Endpoint principali
-
-| Rotta | Uso |
+| BUY nel ciclo | Uscite |
 |---|---|
-| `POST /api/webhook/tradingview` | webhook alert TradingView (secret del bot) |
-| `POST /api/autopilot` | esecuzione autonoma 3H senza TradingView |
-| `GET/POST /api/vapi-ladder` | stato e backtest della scala |
-| `POST /api/emergency-stop` | kill-switch: mette in pausa tutti i bot |
-| `GET /api/config-status` | checklist di produzione |
-| `GET /api/health` | healthcheck |
+| 3 | VAPI ≥ 0 → 50% · VAPI ≥ 15 → 50% del residuo · VAPI ≥ 22 → chiude |
+| 2 | VAPI ≥ 5 → 50% · VAPI ≥ 15 → chiude il resto |
+| 1 | VAPI ≥ 12 → chiude tutto |
 
-## Avvertenza
+## Pagine
 
-La martingala aumenta l'esposizione e la strategia non prevede stop loss.
-Usa size ridotte, prova in paper trading e verifica i livelli sul feed
-dell'exchange che usi per l'esecuzione.
+| Path | Cosa fa |
+|---|---|
+| `/` | dashboard: prezzi, gauge VAPI, ladder, cicli aperti, diagnosi |
+| `/webhooks` | log di ogni webhook + simulatore segnali |
+| `/history` | cicli e ordini |
+| `/setup` | URL/secret, script Pine, test connessione, checklist |
+| `/settings` | paper/live, kill-switch, size per simbolo, comportamento |
+| `/api/webhook/tradingview` | endpoint TradingView (POST) e verifica raggiungibilità (GET) |
+| `/api/health` | stato DB/schema/modalità/secret |
+
+## Payload accettato
+
+```json
+{"secret":"…","ticker":"BTCUSDT","action":"BUY_LONG","rung":"1","vapi":-26.4,"price":95000,"barTime":"2025-01-01T00:00:00Z"}
+{"secret":"…","ticker":"BTCUSDT","action":"CLOSE_LONG","closePct":50,"vapi":15.4,"price":120000,"barTime":"2025-01-01T03:00:00Z"}
+```
+
+Sono accettati anche `BUY` / `SELL` / `BAR_CLOSE` / `PING`, i campi `symbol`, `tf`, `tier`, e il formato `{"action":"…","price":…}` senza ticker (allora serve `?secret=` nell'URL). Ogni scarto è registrato con un codice esplicativo.
+
+## Sviluppo locale
+
+```bash
+cp .env.example .env      # imposta DATABASE_URL
+npm install
+npx drizzle-kit push      # crea le tabelle
+npm run dev               # http://localhost:3000
+```
+
+Test rapidi:
+
+```bash
+curl -X POST http://localhost:3000/api/webhook/tradingview \
+  -H 'Content-Type: application/json' \
+  -d '{"secret":"<secret da /setup>","action":"PING"}'
+```
+
+## Sicurezza
+
+- `ADMIN_PASSWORD` protegge la dashboard (il secret del webhook è visibile solo lì); webhook e health restano pubblici.
+- `.env` è in `.gitignore`: non committare mai chiavi.
+- In paper nessun ordine reale: i fill sono simulati al prezzo del segnale e registrati nel DB.
+- In live servono `HL_PRIVATE_KEY` (API wallet, non il wallet principale), `HL_NETWORK` e `HL_SLIPPAGE_PCT`.

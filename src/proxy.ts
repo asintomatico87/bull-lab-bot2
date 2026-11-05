@@ -1,57 +1,32 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Protezione opzionale del cruscotto (Next.js 16: convenzione "proxy").
- *
- * SPENTA per default: se DASHBOARD_USER e DASHBOARD_PASSWORD non sono impostate,
- * ogni richiesta passa inalterata (necessario per la preview e per lo sviluppo locale).
- *
- * ACCESA: basta impostare le due variabili d'ambiente (es. su Vercel) e tutto il
- * cruscotto chiede utente e password con HTTP Basic Auth.
- *
- * Sempre pubbliche (mai bloccate):
- *  - /api/health      -> healthcheck della piattaforma
- *  - /api/webhook/*   -> TradingView deve poter inviare gli alert
- *  - /api/config-status -> diagnostica di produzione
+ * Protegge la dashboard con Basic Auth quando ADMIN_PASSWORD è impostata.
+ * Webhook e health check restano pubblici (il webhook è protetto dal secret).
  */
-export function proxy(request: NextRequest) {
-  const user = process.env.DASHBOARD_USER;
-  const password = process.env.DASHBOARD_PASSWORD;
+export function proxy(req: NextRequest) {
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) return NextResponse.next();
 
-  if (!user || !password) {
-    return NextResponse.next();
-  }
-
-  const { pathname } = request.nextUrl;
-  if (
-    pathname.startsWith("/api/health") ||
-    pathname.startsWith("/api/webhook") ||
-    pathname.startsWith("/api/config-status")
-  ) {
-    return NextResponse.next();
-  }
-
-  const header = request.headers.get("authorization");
+  const user = process.env.ADMIN_USER || "admin";
+  const header = req.headers.get("authorization");
   if (header?.startsWith("Basic ")) {
     try {
       const decoded = atob(header.slice(6));
-      const separator = decoded.indexOf(":");
-      const sentUser = decoded.slice(0, separator);
-      const sentPassword = decoded.slice(separator + 1);
-      if (sentUser === user && sentPassword === password) {
+      const idx = decoded.indexOf(":");
+      if (decoded.slice(0, idx) === user && decoded.slice(idx + 1) === password) {
         return NextResponse.next();
       }
     } catch {
-      // header malformato: si prosegue verso il 401
+      // credenziali malformate
     }
   }
-
-  return new NextResponse("Bull Lab: accesso riservato", {
+  return new NextResponse("Autenticazione richiesta", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Bull Lab Trading System", charset="UTF-8"' },
+    headers: { "WWW-Authenticate": 'Basic realm="Bull Lab Trading System"' },
   });
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|images).*)"],
+  matcher: ["/((?!api/webhook|api/health|_next/static|_next/image|favicon.ico).*)"],
 };

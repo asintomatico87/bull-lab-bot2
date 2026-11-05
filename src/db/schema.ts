@@ -1,79 +1,139 @@
-import { pgTable, serial, text, numeric, integer, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
-export const tradingBots = pgTable("trading_bots", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  pair: text("pair").notNull().default("BTC/USDT"),
-  strategyKey: text("strategy_key").notNull().default("bull_lab_confluence"),
-  platform: text("platform").notNull().default("hyperliquid_dex"),
-  mode: text("mode").notNull().default("paper"), // paper | live
-  status: text("status").notNull().default("active"), // active | paused | stopped
-  leverage: integer("leverage").notNull().default(3),
-  orderSizeUsdt: numeric("order_size_usdt").notNull().default("500"),
-  stopLossPct: numeric("stop_loss_pct").notNull().default("2.5"),
-  takeProfitPct: numeric("take_profit_pct").notNull().default("6.0"),
-  trailingStopPct: numeric("trailing_stop_pct").notNull().default("1.5"),
-  timeframe: text("timeframe").notNull().default("1h"),
-  totalPnL: numeric("total_pnl").notNull().default("0"),
-  winCount: integer("win_count").notNull().default(0),
-  lossCount: integer("loss_count").notNull().default(0),
-  config: jsonb("config").default({}),
+/** Impostazioni globali (una sola riga, id = 1). */
+export const botSettings = pgTable("bot_settings", {
+  id: integer("id").primaryKey().default(1),
+  /** 'paper' | 'live' */
+  mode: text("mode").notNull().default("paper"),
+  /** true = nessun NUOVO acquisto (le vendite restano attive). */
+  killSwitch: boolean("kill_switch").notNull().default(false),
+  /** Secret generato al primo avvio (sovrascritto da env WEBHOOK_SECRET se presente). */
   webhookSecret: text("webhook_secret").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  lastRunAt: timestamp("last_run_at").defaultNow().notNull(),
+  /** Consente nuovi BUY dopo che il ciclo ha già venduto una parte. */
+  allowBuyAfterPartial: boolean("allow_buy_after_partial").notNull().default(false),
+  /** Consente più scaglioni di uscita nella stessa chiusura 3H. */
+  multiStagePerBar: boolean("multi_stage_per_bar").notNull().default(false),
+  /** Accetta i SELL solo in prossimità della chiusura di una candela 3H. */
+  enforceCloseWindow: boolean("enforce_close_window").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const tradeOrders = pgTable("trade_orders", {
-  id: serial("id").primaryKey(),
-  botId: integer("bot_id"),
-  pair: text("pair").notNull(),
-  type: text("type").notNull(), // BUY_LONG | SELL_SHORT | CLOSE_LONG | CLOSE_SHORT
-  price: numeric("price").notNull(),
-  amount: numeric("amount").notNull(),
-  totalUsdt: numeric("total_usdt").notNull(),
-  status: text("status").notNull().default("FILLED"), // FILLED | OPEN | CANCELLED
-  pnlUsdt: numeric("pnl_usdt").default("0"),
-  pnlPct: numeric("pnl_pct").default("0"),
-  source: text("source").notNull().default("BOT_STRATEGY"), // WEBHOOK_TRADINGVIEW | BOT_STRATEGY | MANUAL_ORDER
-  notes: text("notes"),
-  platform: text("platform").notNull().default("paper_trading"),
-  timestamp: timestamp("timestamp").defaultNow().notNull(),
+/** Configurazione per simbolo (BTC, ETH). */
+export const symbolConfig = pgTable("symbol_config", {
+  coin: text("coin").primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  /** Dollari corrispondenti a 1× di size. */
+  unitUsd: doublePrecision("unit_usd").notNull().default(500),
 });
 
-export const customStrategies = pgTable("custom_strategies", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  pair: text("pair").notNull().default("BTC/USDT"),
-  indicators: jsonb("indicators").default([]),
-  timeframe: text("timeframe").notNull().default("1h"),
-  pineScript: text("pine_script"),
-  backtestStats: jsonb("backtest_stats").default({}),
-  isBullLabPreset: boolean("is_bull_lab_preset").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+/** Ogni richiesta arrivata al webhook, con esito e motivo. */
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: serial("id").primaryKey(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    /** 'tradingview' | 'simulator' */
+    source: text("source").notNull().default("tradingview"),
+    ip: text("ip"),
+    contentType: text("content_type"),
+    userAgent: text("user_agent"),
+    rawBody: text("raw_body"),
+    parsed: jsonb("parsed"),
+    /** 'executed' | 'ignored' | 'rejected' | 'error' */
+    status: text("status").notNull(),
+    code: text("code").notNull(),
+    message: text("message").notNull(),
+    coin: text("coin"),
+    action: text("action"),
+    tier: integer("tier"),
+    detail: jsonb("detail"),
+    durationMs: integer("duration_ms"),
+  },
+  (t) => [index("webhook_events_received_idx").on(t.receivedAt)],
+);
 
-export const exchangeProfiles = pgTable("exchange_profiles", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  platformKey: text("platform_key").notNull(), // hyperliquid_dex | ourbit_nokyc | bitbase | bybit | binance | paper
-  kycType: text("kyc_type").notNull().default("NO_KYC"), // NO_KYC | LOW_KYC | FULL_KYC | DECENTRALIZED
-  apiKeyMasked: text("api_key_masked"),
-  apiSecretMasked: text("api_secret_masked"),
-  walletAddress: text("wallet_address"),
-  isTestnet: boolean("is_testnet").default(true),
-  balanceUsdt: numeric("balance_usdt").notNull().default("10000"),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+/** Un ciclo = da primo BUY fino alla chiusura completa della posizione. */
+export const cycles = pgTable(
+  "cycles",
+  {
+    id: serial("id").primaryKey(),
+    coin: text("coin").notNull(),
+    /** 'open' | 'closed' */
+    status: text("status").notNull().default("open"),
+    mode: text("mode").notNull().default("paper"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    buyCount: integer("buy_count").notNull().default(0),
+    filledTiers: integer("filled_tiers").array().notNull().default(sql`'{}'::integer[]`),
+    avgEntry: doublePrecision("avg_entry").notNull().default(0),
+    /** Quantità residua (in coin). */
+    qty: doublePrecision("qty").notNull().default(0),
+    totalCostUsd: doublePrecision("total_cost_usd").notNull().default(0),
+    proceedsUsd: doublePrecision("proceeds_usd").notNull().default(0),
+    realizedPnlUsd: doublePrecision("realized_pnl_usd").notNull().default(0),
+    /** Numero di scaglioni di uscita già eseguiti. */
+    exitStage: integer("exit_stage").notNull().default(0),
+    closeReason: text("close_reason"),
+  },
+  (t) => [
+    uniqueIndex("one_open_cycle_per_coin")
+      .on(t.coin)
+      .where(sql`${t.status} = 'open'`),
+  ],
+);
 
-export const webhookLogs = pgTable("webhook_logs", {
-  id: serial("id").primaryKey(),
-  ticker: text("ticker").notNull(),
-  action: text("action").notNull(),
-  price: numeric("price"),
-  rawPayload: text("raw_payload"),
-  status: text("status").notNull().default("EXECUTED"), // EXECUTED | REJECTED_BAD_SECRET | ERROR
-  sourceIp: text("source_ip"),
-  timestamp: timestamp("timestamp").defaultNow().notNull(),
-});
+export const orders = pgTable(
+  "orders",
+  {
+    id: serial("id").primaryKey(),
+    cycleId: integer("cycle_id").notNull(),
+    coin: text("coin").notNull(),
+    /** 'BUY' | 'SELL' */
+    side: text("side").notNull(),
+    tier: integer("tier"),
+    exitStage: integer("exit_stage"),
+    reason: text("reason").notNull(),
+    mode: text("mode").notNull(),
+    price: doublePrecision("price").notNull(),
+    qty: doublePrecision("qty").notNull(),
+    notionalUsd: doublePrecision("notional_usd").notNull(),
+    pnlUsd: doublePrecision("pnl_usd"),
+    pnlPct: doublePrecision("pnl_pct"),
+    barTime: timestamp("bar_time", { withTimezone: true }),
+    exchange: jsonb("exchange"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("orders_created_idx").on(t.createdAt)],
+);
+
+/** Anti-duplicati: una sola azione per (coin, tipo, candela). */
+export const barActions = pgTable(
+  "bar_actions",
+  {
+    id: serial("id").primaryKey(),
+    coin: text("coin").notNull(),
+    /** 'BUY:1' | 'BUY:2' | 'BUY:3' | 'EXIT' */
+    kind: text("kind").notNull(),
+    barTime: timestamp("bar_time", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("bar_actions_unique").on(t.coin, t.kind, t.barTime)],
+);
+
+export type BotSettings = typeof botSettings.$inferSelect;
+export type SymbolConfig = typeof symbolConfig.$inferSelect;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type Cycle = typeof cycles.$inferSelect;
+export type Order = typeof orders.$inferSelect;
