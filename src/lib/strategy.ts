@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { cycles, trades } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { getSizes } from "@/lib/settings";
 
 // ============================================================
 // BULL LAB — VAPI LADDER 3H (Martingale ladder on LazyBear VAPI)
@@ -57,7 +58,8 @@ export async function processSignal(s: Signal): Promise<{ status: string; reason
     const key = String(entries + 1);
     if (c && Object.values(c.lastBuyBars).includes(s.bar_time)) return { status: "ignored", reason: "R2: già 1 BUY su questa candela 3H" };
 
-    const usd = BASE_USD * SIZES[entries]; // R3: 500 / 750 / 1250 USDT
+    const sizes = await getSizes();
+    const usd = (symbol === "ETH" ? sizes.ETH : sizes.BTC) * SIZES[entries];
     const qty = usd / s.price;
     const cost = usd * (1 + FEE);
     let cycleId: number;

@@ -1,5 +1,12 @@
 import { pgTable, serial, text, integer, doublePrecision, timestamp, jsonb } from "drizzle-orm/pg-core";
 
+export const appSettings = pgTable("app_settings", {
+  id: integer("id").primaryKey(),
+  btcUsd: doublePrecision("btc_usd").notNull().default(500),
+  ethUsd: doublePrecision("eth_usd").notNull().default(500),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const webhookLogs = pgTable("webhook_logs", {
   id: serial("id").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

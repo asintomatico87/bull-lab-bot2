@@ -12,6 +12,42 @@ export function WebhookUrl() {
   </div>;
 }
 
+export function SizeControl({ symbol, value }: { symbol: "BTC" | "ETH"; value: number }) {
+  const router = useRouter();
+  const [usd, setUsd] = useState(String(value));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => setUsd(String(value)), [value]);
+  const n = Number(usd);
+  const ok = Number.isFinite(n) && n >= 10;
+  async function save() {
+    if (!ok) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol, usd: n }) });
+      const j = await r.json();
+      if (!j.ok) setMsg(j.error || "Salvataggio non riuscito");
+      else { setMsg("Size salvata. Vale dai prossimi BUY."); router.refresh(); }
+    } catch {
+      setMsg("Salvataggio non riuscito");
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="rounded-2xl bg-black/35 border border-white/10 p-4 mt-6">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Size base · 1×</p>
+      <div className="flex flex-wrap items-end gap-3 mt-2">
+        <label className="field-label">USDT
+          <input className="input-field w-36" type="number" min={10} step="10" value={usd} onChange={(e) => { setUsd(e.target.value); setMsg(""); }} />
+        </label>
+        <button className="button-primary" disabled={busy || !ok} onClick={save}>{busy ? "Salvo…" : "Salva size"}</button>
+      </div>
+      <p className="text-xs text-slate-400 mt-2">Scala: {ok ? `${n} / ${n * 1.5} / ${n * 2.5}` : "—"} USDT · non modifica i BUY già aperti</p>
+      {msg && <p className="text-sm text-cyan-200 mt-1">{msg}</p>}
+    </div>
+  );
+}
+
 export function PineCopy({ pine }: { pine: string }) {
   const [copied, setCopied] = useState(false);
   return <button className="button-primary" onClick={async () => { await navigator.clipboard.writeText(pine); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>{copied ? "Script copiato ✓" : "Copia tutto lo script Pine v5"}</button>;

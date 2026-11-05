@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bull Lab — VAPI Ladder 3H",
-  description: "Bull Lab Trading System · VAPI LazyBear · BTC/ETH · 3H · Powered by AltcoinItalia",
+  title: "Bull Lab Command Center — VAPI Ladder 3H",
+  description: "Cruscotto paper BTC ed ETH · VAPI LazyBear 3H · Bull Lab by Asintomatico",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

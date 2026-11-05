@@ -2,93 +2,243 @@ import { db } from "@/db";
 import { ensureSchema } from "@/db/ensure";
 import { cycles, trades, webhookLogs } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { PineCopy, TestPanel, WebhookUrl } from "./actions";
+import { PineCopy, SizeControl, TestPanel, WebhookUrl } from "./actions";
 import { PINE } from "@/lib/pine";
-import { BASE_USD } from "@/lib/strategy";
+import { getSizes } from "@/lib/settings";
+import { exposure, money, nextMove, qtyFmt, rungs, utcStamp, type CycleRow, type TradeRow } from "@/lib/desk";
 
 export const dynamic = "force-dynamic";
-const badge = (status: string) => status === "executed" ? "text-emerald-300" : status === "ignored" ? "text-amber-200" : "text-rose-300";
+
+function SystemCard({
+  symbol, theme, mark, cycle, last, sizeUsd,
+}: {
+  symbol: "BTC" | "ETH";
+  theme: "cyan" | "orange";
+  mark: string;
+  cycle?: CycleRow;
+  last?: TradeRow;
+  sizeUsd: number;
+}) {
+  const open = !!cycle;
+  const next = nextMove(cycle);
+  const avg = cycle && cycle.qty ? cycle.cost / cycle.qty : 0;
+  const cyan = theme === "cyan";
+  return (
+    <article className={`glass ${cyan ? "glass-cyan" : "glass-orange"} rounded-[28px] p-6 md:p-8 relative overflow-hidden`}>
+      <div className="absolute -right-8 -top-10 w-44 h-44 opacity-70 pointer-events-none">
+        <img src={mark} alt="" className="w-full h-full object-cover rounded-full mix-blend-screen" />
+      </div>
+      <div className="flex items-start justify-between gap-4 relative">
+        <div>
+          <p className="kicker">{cyan ? "SISTEMA 01" : "SISTEMA 02"}</p>
+          <h2 className={`h1 text-4xl md:text-5xl mt-1 ${cyan ? "text-cyan-300" : "text-orange-400"}`}>{symbol}<span className="text-slate-500 text-xl md:text-2xl"> / USDT</span></h2>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-extrabold tracking-wider border ${open ? (cycle?.exitStage ? "border-amber-400 text-amber-200 bg-amber-500/10" : "border-emerald-400 text-emerald-200 bg-emerald-500/10") : "border-slate-500 text-slate-300 bg-slate-800/60"}`}>
+          {open ? (cycle?.exitStage ? "IN USCITA" : "POSIZIONE APERTA") : "FLAT"}
+        </span>
+      </div>
+
+      <p className="mt-5 text-lg md:text-xl font-semibold text-white">{next.title}</p>
+      <p className="mt-1 text-slate-300 leading-relaxed max-w-xl">{next.text}</p>
+
+      <div className="grid grid-cols-2 gap-4 mt-7">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Quantità</p>
+          <p className="metric text-2xl md:text-3xl mt-1">{cycle ? qtyFmt(cycle.qty) : "0,000000"}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Prezzo medio</p>
+          <p className="metric text-2xl md:text-3xl mt-1">{cycle && cycle.qty ? money(avg) : "—"}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Esposizione</p>
+          <p className="metric text-2xl md:text-3xl mt-1">{cycle ? money(exposure(cycle)) : "0,00"} <span className="text-sm text-slate-400">USDT</span></p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">PnL ciclo</p>
+          <p className={`metric text-2xl md:text-3xl mt-1 ${(cycle?.realizedPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{money(cycle?.realizedPnl ?? 0)}</p>
+        </div>
+      </div>
+
+      <div className="mt-7">
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-3">Scala BUY · 3H</p>
+        <div className="grid grid-cols-3 gap-3">
+          {rungs(sizeUsd).map((r, i) => {
+            const filled = (cycle?.entries ?? 0) > i;
+            return (
+              <div key={r.n} className="rounded-2xl bg-black/35 border border-white/5 p-3">
+                <div className={`rung ${filled ? `on-${r.n}` : ""}`}><span /></div>
+                <p className="mt-2 text-sm font-bold">{filled ? "COMPRATO" : `Scalino ${r.n}`}</p>
+                <p className="text-xs text-slate-400">VAPI ≤ {r.vapi}</p>
+                <p className="text-xs text-slate-400">{r.usd} USDT</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <SizeControl symbol={symbol} value={sizeUsd} />
+
+      <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300 border-t border-white/5 pt-4">
+        <span>Ultimo VAPI: <b className="text-white">{last ? last.vapi.toFixed(2) : "—"}</b></span>
+        <span>Ultimo prezzo: <b className="text-white">{last ? money(last.price) : "—"}</b></span>
+        <span>Ultimo lato: <b className={last?.side === "BUY" ? "text-emerald-300" : last?.side === "SELL" ? "text-orange-300" : "text-white"}>{last?.side ?? "—"}</b></span>
+      </div>
+    </article>
+  );
+}
 
 export default async function Home() {
   await ensureSchema();
   const secret = process.env.WEBHOOK_SECRET || "bulllab";
+  const sizes = await getSizes();
   const [open, closed, logs, tr] = await Promise.all([
     db.select().from(cycles).where(eq(cycles.status, "open")),
     db.select().from(cycles).where(eq(cycles.status, "closed")),
-    db.select().from(webhookLogs).orderBy(desc(webhookLogs.id)).limit(30),
-    db.select().from(trades).orderBy(desc(trades.id)).limit(40),
+    db.select().from(webhookLogs).orderBy(desc(webhookLogs.id)).limit(18),
+    db.select().from(trades).orderBy(desc(trades.id)).limit(24),
   ]);
   const realized = [...open, ...closed].reduce((total, c) => total + c.realizedPnl, 0);
-  const title = "font-display text-lg md:text-xl font-bold text-white tracking-wide";
-  const card = "panel rounded-2xl p-5 md:p-7";
+  const lastOf = (s: string) => tr.find((t) => t.symbol === s);
+  const btc = open.find((c) => c.symbol === "BTC");
+  const eth = open.find((c) => c.symbol === "ETH");
+  const live = logs.some((l) => l.status === "executed") || open.length > 0;
 
-  return <main className="min-h-screen relative">
-    <div className="absolute inset-0 bg-grid pointer-events-none" />
-    <div className="relative mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10 space-y-7">
-      <header className="panel rounded-2xl px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-        <img src="/images/logo.jpg" alt="Bull Lab" className="h-14 md:h-20 max-w-[66%] object-contain mix-blend-screen" />
-        <div className="flex items-center gap-4"><div className="text-right"><h1 className="font-display text-cyan-300 text-sm md:text-lg font-bold">VAPI LADDER 3H</h1><span className="text-amber-300 font-bold text-sm">● SOLO PAPER</span></div><img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-cyan-400/70" /></div>
-      </header>
+  return (
+    <main className="stage">
+      <div className="stage-bg" />
+      <div className="stage-photo" style={{ backgroundImage: "url(/images/bg.jpg)" }} />
+      <div className="stage-vignette" />
 
-      <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 px-5 py-4 text-amber-100 text-base md:text-lg leading-relaxed">
-        <strong>Prima di tutto:</strong> il test qui sotto funziona anche <strong>senza TradingView</strong>. Se risponde “eseguito”, sito e database comunicano. Gli ordini rimangono simulati: non viene inviato nulla a Hyperliquid.
+      <div className="relative mx-auto max-w-[1280px] px-4 md:px-8 py-6 md:py-8 space-y-6">
+        <header className="glass rounded-[28px] px-5 md:px-7 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <img src="/images/logo.jpg" alt="Bull Lab" className="h-14 md:h-[72px] w-auto object-contain mix-blend-screen drop-shadow-[0_0_24px_rgba(255,122,24,.25)]" />
+          <div className="flex items-center gap-5">
+            <div className="hidden sm:block text-right">
+              <p className="kicker">Command center</p>
+              <p className="h1 text-lg text-white">VAPI LADDER 3H</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5">
+              <span className="live-dot" />
+              <span className="text-xs font-extrabold tracking-widest text-cyan-200">{live ? "PAPER LIVE" : "PAPER READY"}</span>
+            </div>
+            <img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-orange-400/70 shadow-[0_0_24px_rgba(255,122,24,.45)]" />
+          </div>
+        </header>
+
+        <div className="ticker">
+            <span>BULL LAB · POWERED BY ALTCOINITALIA · BTC &nbsp;+&nbsp; ETH · TIMEFRAME 3H · PERIODO 10 · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL SOLO A CHIUSURA · SIZE MODIFICABILE DAL CRUSCOTTO · FEE 0,035% · SOLO PAPER &nbsp;&nbsp;&nbsp; BULL LAB · POWERED BY ALTCOINITALIA · BTC &nbsp;+&nbsp; ETH · TIMEFRAME 3H · PERIODO 10 · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL SOLO A CHIUSURA · SIZE MODIFICABILE DAL CRUSCOTTO · FEE 0,035% · SOLO PAPER &nbsp;&nbsp;&nbsp;</span>
+        </div>
+
+        <section className="grid lg:grid-cols-[1fr_280px] gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="glass rounded-3xl p-5">
+              <p className="kicker">PnL realizzato</p>
+              <p className={`metric text-4xl mt-2 ${realized >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{realized >= 0 ? "+" : ""}{money(realized)} $</p>
+              <p className="text-slate-400 text-sm mt-2">Somma di tutti i cicli chiusi e parziali</p>
+            </div>
+            <div className="glass rounded-3xl p-5">
+              <p className="kicker">Sistemi attivi</p>
+              <p className="metric text-4xl mt-2 text-white">{open.length}<span className="text-xl text-slate-500"> / 2</span></p>
+              <p className="text-slate-400 text-sm mt-2">{btc ? "BTC in posizione" : "BTC flat"} · {eth ? "ETH in posizione" : "ETH flat"}</p>
+            </div>
+            <div className="glass rounded-3xl p-5">
+              <p className="kicker">Cicli chiusi</p>
+              <p className="metric text-4xl mt-2 text-orange-300">{closed.length}</p>
+              <p className="text-slate-400 text-sm mt-2">BTC {money(sizes.BTC)} · ETH {money(sizes.ETH)} USDT</p>
+            </div>
+          </div>
+          <div className="glass rounded-3xl p-5 flex flex-col justify-center">
+            <p className="kicker">Modalità</p>
+            <p className="h1 text-2xl text-orange-300 mt-2">PAPER</p>
+            <p className="text-slate-300 text-sm mt-2 leading-relaxed">Nessun ordine su Hyperliquid. Quello che vedi è simulato dal webhook TradingView.</p>
+          </div>
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-5" aria-label="I due sistemi">
+          <SystemCard symbol="BTC" theme="cyan" mark="/images/btc-mark.jpg" cycle={btc} last={lastOf("BTC")} sizeUsd={sizes.BTC} />
+          <SystemCard symbol="ETH" theme="orange" mark="/images/eth-mark.jpg" cycle={eth} last={lastOf("ETH")} sizeUsd={sizes.ETH} />
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-5">
+          <div className="glass rounded-[28px] p-6">
+            <p className="kicker">Feed segnali</p>
+            <h3 className="h1 text-xl mt-1">Cosa arriva da TradingView</h3>
+            <div className="mt-4 max-h-[360px] overflow-y-auto space-y-3 pr-1">
+              {logs.length === 0 && <p className="text-slate-400">Nessun segnale ancora. Quando l’alert scatta, compare qui.</p>}
+              {logs.map((l) => (
+                <div key={l.id} className="rounded-2xl bg-black/30 border border-white/5 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                    <time>{utcStamp(l.createdAt)}</time>
+                    <b className={l.status === "executed" ? "text-emerald-300" : l.status === "ignored" ? "text-amber-200" : "text-rose-300"}>{l.status.toUpperCase()}</b>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-100 leading-snug">{l.reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="glass rounded-[28px] p-6">
+            <p className="kicker">Operazioni paper</p>
+            <h3 className="h1 text-xl mt-1">BUY e SELL registrati</h3>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-slate-400 text-xs uppercase tracking-wider">
+                  <tr><th className="pb-3 pr-3">Quando</th><th className="pb-3 pr-3">Asset</th><th className="pb-3 pr-3">Lato</th><th className="pb-3 pr-3">Prezzo</th><th className="pb-3 pr-3">Qty</th><th className="pb-3">PnL</th></tr>
+                </thead>
+                <tbody>
+                  {tr.map((t) => (
+                    <tr key={t.id} className="border-t border-white/5">
+                      <td className="py-2.5 pr-3 whitespace-nowrap text-slate-400">{utcStamp(t.createdAt)}</td>
+                      <td className="pr-3 font-bold">{t.symbol}</td>
+                      <td className={`pr-3 font-extrabold ${t.side === "BUY" ? "text-emerald-300" : "text-orange-300"}`}>{t.side}</td>
+                      <td className="pr-3">{money(t.price)}</td>
+                      <td className="pr-3">{qtyFmt(t.qty)}</td>
+                      <td className={t.side === "SELL" ? (t.pnl >= 0 ? "text-emerald-300" : "text-rose-300") : "text-slate-500"}>{t.side === "SELL" ? money(t.pnl) : "—"}</td>
+                    </tr>
+                  ))}
+                  {tr.length === 0 && <tr><td colSpan={6} className="py-4 text-slate-400">Nessuna operazione paper.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <details className="glass rounded-[28px] p-6">
+          <summary className="h1 text-lg text-cyan-200">Laboratorio · Pine, webhook e test</summary>
+          <div className="mt-5 space-y-8">
+            <div>
+              <p className="kicker">Script</p>
+              <h3 className="text-xl font-bold mt-1">Pine v5 — un solo script per BUY e SELL</h3>
+              <p className="text-slate-300 mt-2 max-w-3xl">BUY al tocco intrabar, SELL solo a chiusura 3H. Prima di incollare nell’Editor Pine seleziona tutto (⌘A / Ctrl+A). Deve restare una sola riga <code>indicator(</code>.</p>
+              <div className="flex flex-wrap items-center gap-3 mt-4"><PineCopy pine={PINE} /></div>
+              <details className="mt-4"><summary className="text-cyan-200">Mostra il codice</summary><pre className="mt-3 max-h-80 overflow-auto text-xs bg-black/50 p-4 rounded-2xl">{PINE}</pre></details>
+            </div>
+            <div>
+              <p className="kicker">Alert</p>
+              <h3 className="text-xl font-bold mt-1">Due grafici, due alert, stesso webhook</h3>
+              <p className="text-slate-300 mt-2">BTCUSDT 3H e ETHUSDT 3H. Condizione: Any alert() function call. Messaggio lasciato allo script. Secret uguale a Vercel.</p>
+              <div className="mt-4 space-y-3">
+                <div><p className="field-label">Indirizzo webhook</p><WebhookUrl /></div>
+                <div><p className="field-label">Webhook secret</p><code className="text-orange-200 text-lg">{secret}</code></div>
+              </div>
+            </div>
+            <div>
+              <p className="kicker">Test manuale</p>
+              <h3 className="text-xl font-bold mt-1">Simulazione — non è il VAPI del grafico</h3>
+              <TestPanel secret={secret} />
+            </div>
+            <div>
+              <p className="kicker">Deploy</p>
+              <a href="/setup/bull-lab-v2.zip" download className="button-secondary inline-block mt-3">Scarica progetto aggiornato (.zip)</a>
+            </div>
+          </div>
+        </details>
+
+        <footer className="pb-8 text-sm text-slate-500 flex flex-wrap justify-between gap-2">
+          <span>BULL LAB · by Asintomatico · Powered by AltcoinItalia</span>
+          <span>Condizioni valutate dai segnali TradingView, non da Hyperliquid</span>
+        </footer>
       </div>
-
-      <nav aria-label="Passaggi di configurazione" className="flex flex-wrap gap-3">
-        <a className="quick-link" href="#test">1 · Prova il server</a><a className="quick-link" href="#pine">2 · Copia lo script Pine</a><a className="quick-link" href="#alert">3 · Imposta TradingView</a><a className="quick-link" href="#logs">Log e operazioni</a>
-      </nav>
-
-      <section id="test" className={card}>
-        <div className="step">PASSO 1</div><h2 className={title}>Prova il webhook</h2>
-        <p className="explain">I valori qui sotto sono <b>inventati per il test</b>, non letti dal grafico. Con BTC, BUY e VAPI −26 il primo scalino può comprare 500 USDT paper. Se il primo BUY esiste già, il secondo richiede VAPI ≤ −32: a −26 è corretto vedere “nessuna operazione”.</p>
-        <TestPanel secret={secret} />
-      </section>
-
-      <section id="pine" className={card}>
-        <div className="step">PASSO 2</div><h2 className={title}>Script Pine v5 — qui, pronto da copiare</h2>
-        <p className="explain">Questo <b>unico script</b> controlla entrambe le condizioni: invia il BUY quando il VAPI tocca il livello <b>durante</b> una candela 3H; invia la chiusura della candela per valutare il SELL. Il server mantiene la posizione, gli scaglioni già comprati e le vendite già eseguite. Non servono due alert diversi per BUY e SELL.</p>
-        <div className="flex flex-wrap items-center gap-3 mb-4"><PineCopy pine={PINE} /><span className="text-slate-300 text-sm">Clicca, poi incolla in TradingView → Pine Editor → Salva → Aggiungi al grafico.</span></div>
-        <details className="rounded-xl border border-slate-700 bg-slate-950/80 p-4"><summary className="cursor-pointer font-semibold text-cyan-200 text-base">Mostra il codice completo sullo schermo</summary><pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre text-sm text-slate-200 leading-relaxed font-mono">{PINE}</pre></details>
-        <p className="text-sm text-amber-200 mt-3 rounded-lg border border-amber-600/40 bg-amber-950/20 px-4 py-3"><b>Prima di incollare:</b> clicca dentro l’Editor Pine, premi <b>⌘A su Mac</b> (Ctrl+A su Windows) e poi incolla. Il nuovo codice deve <b>sostituire completamente</b> il vecchio: la prima riga deve essere <code>//@version=5</code> e deve esserci <b>una sola</b> riga <code>indicator(</code> o <code>strategy(</code>. Se leggi “Your script has 2”, è rimasto del vecchio codice sopra.</p>
-      </section>
-
-      <section id="alert" className={card}>
-        <div className="step">PASSO 3</div><h2 className={title}>Crea gli alert su TradingView</h2>
-        <div className="space-y-4 mt-4">
-          <div className="instruction"><b className="text-cyan-300">A ·</b> Apri il grafico <b>BTCUSDT</b> su timeframe <b>3H</b>, aggiungi lo script copiato sopra. Nelle impostazioni dello script lascia periodo <b>10</b>, ticker <b>BTCUSDT</b> e imposta il Webhook secret indicato sotto.</div>
-          <div className="instruction"><b className="text-cyan-300">B ·</b> Crea <b>un solo alert per BTC</b> con Condizione <b>BL_VAPI_LADDER → Any alert() function call</b>. Lascia il messaggio dell’alert com’è: il testo JSON viene generato da <code>alert()</code> nello script. Abilita la voce <b>Webhook URL</b> e incolla l’indirizzo qui sotto.</div>
-          <div className="instruction"><b className="text-cyan-300">C ·</b> Ripeti su <b>ETHUSDT, timeframe 3H</b>: aggiungi lo stesso script ma imposta <b>Ticker = ETHUSDT</b>; crea un secondo alert per ETH. Per entrambi, lo stesso secret e lo stesso indirizzo webhook.</div>
-        </div>
-        <div className="rounded-xl bg-slate-950/80 border border-cyan-800/50 p-4 mt-5 space-y-3">
-          <div><span className="field-label">Indirizzo webhook (da inserire in entrambi gli alert)</span><WebhookUrl /></div>
-          <div><span className="field-label">Webhook secret (nel campo dello script Pine)</span><code className="text-lg text-amber-200 break-all">{secret}</code></div>
-        </div>
-        <p className="text-sm text-slate-300 mt-4">Se modifichi lo script, ricrea gli alert: TradingView conserva una copia della versione usata quando li hai creati. Serve la 2FA sull’account TradingView per i webhook.</p>
-      </section>
-
-      <section className="grid md:grid-cols-3 gap-4" aria-label="Posizioni paper">
-        {["BTC", "ETH"].map((symbol) => { const c = open.find((v) => v.symbol === symbol); return <div className="panel rounded-2xl p-5" key={symbol}>
-          <h2 className="font-display text-xl text-cyan-200 font-bold">{symbol} / USDT</h2><p className="text-lg text-white font-semibold mt-2">{c ? `Posizione aperta · ${c.entries}/3 BUY` : "Nessuna posizione aperta"}</p>
-          <p className="text-slate-300 mt-2">{c ? `Quantità: ${c.qty.toFixed(6)} · Prezzo medio: ${(c.cost / c.qty).toFixed(2)} $` : "Primo BUY quando VAPI ≤ −25"}</p>
-          {c && <p className="text-amber-200 mt-2">Uscite eseguite: {c.exitStage === 0 ? "nessuna" : c.exitStage}</p>}
-        </div>; })}
-        <div className="panel rounded-2xl p-5"><h2 className="font-display text-lg text-amber-200 font-bold">PnL realizzato</h2><p className={`text-3xl font-bold mt-3 ${realized >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{realized.toFixed(2)} $</p><p className="text-slate-400 mt-2">{closed.length} cicli chiusi · base {BASE_USD} USDT</p></div>
-      </section>
-
-      <section className={card}><h2 className={title}>Regole attive · BUY e SELL insieme</h2><div className="grid md:grid-cols-2 gap-5 mt-4 text-base text-slate-200 leading-relaxed">
-        <div className="instruction"><strong className="text-cyan-200">BUY intrabar</strong><p>Massimo 3 per ciclo: VAPI ≤ −25 / −32 / −40, importi {BASE_USD} / {BASE_USD * 1.5} / {BASE_USD * 2.5} USDT. Solo lo scalino successivo, uno per candela 3H. Niente altri BUY dopo una vendita parziale.</p></div>
-        <div className="instruction"><strong className="text-amber-200">SELL alla chiusura 3H</strong><p>1 BUY: ≥12 chiude tutto. 2 BUY: ≥5 vende 50%, poi ≥15 chiude il resto. 3 BUY: ≥0 vende 50%, poi ≥15 metà del rimanente, poi ≥22 chiude tutto. Una tappa per candela. Nessuno stop loss.</p></div>
-      </div></section>
-
-      <section id="logs" className={card}><h2 className={title}>Ultimi segnali ricevuti</h2><p className="explain">Se un alert TradingView non compare qui, non è arrivato al bot. “Ignorato” significa che è arrivato ma non soddisfa la regola.</p><div className="max-h-96 overflow-y-auto space-y-2">
-        {logs.length === 0 && <p className="text-slate-300">Nessun segnale ricevuto per ora.</p>}
-        {logs.map(l => <div key={l.id} className="border-b border-slate-700/70 pb-2 text-sm md:text-base flex flex-wrap gap-x-3"><time className="text-slate-400">{l.createdAt.toISOString().slice(0, 16).replace("T", " ")} UTC</time><b className={badge(l.status)}>{l.status.toUpperCase()}</b><span className="text-slate-200">{l.reason}</span></div>)}
-      </div></section>
-
-      <section className={card}><h2 className={title}>Operazioni paper</h2><div className="overflow-x-auto mt-4"><table className="w-full text-sm md:text-base text-left"><thead className="text-slate-300 border-b border-slate-600"><tr><th className="pb-3 pr-4">Data UTC</th><th className="pb-3 pr-4">Moneta</th><th className="pb-3 pr-4">Lato</th><th className="pb-3 pr-4">Prezzo</th><th className="pb-3 pr-4">Quantità</th><th className="pb-3 pr-4">PnL $</th><th className="pb-3">Regola</th></tr></thead><tbody>{tr.map(t => <tr key={t.id} className="border-b border-slate-800/80"><td className="py-2 pr-4 whitespace-nowrap">{t.createdAt.toISOString().slice(0, 16).replace("T", " ")}</td><td className="pr-4">{t.symbol}</td><td className={`pr-4 font-bold ${t.side === "BUY" ? "text-emerald-300" : "text-amber-300"}`}>{t.side}</td><td className="pr-4">{t.price}</td><td className="pr-4">{t.qty.toFixed(6)}</td><td className="pr-4">{t.side === "SELL" ? t.pnl.toFixed(2) : "—"}</td><td>{t.note}</td></tr>)}{tr.length === 0 && <tr><td colSpan={7} className="py-4 text-slate-400">Nessuna operazione paper.</td></tr>}</tbody></table></div></section>
-
-      <details className={card}><summary className="cursor-pointer text-lg font-semibold text-cyan-200">Devo scaricare di nuovo il progetto per GitHub?</summary><p className="explain">Solo se vuoi pubblicare queste modifiche sul tuo sito. Scarica lo zip aggiornato, sostituisci i file nella cartella del repository con GitHub Desktop, poi “Commit” e “Push origin”.</p><a href="/setup/bull-lab-v2.zip" download className="button-secondary inline-block">Scarica progetto aggiornato (.zip)</a></details>
-      <footer className="text-slate-400 text-sm pb-6">BULL LAB · by Asintomatico · Modalità paper · Le condizioni sono valutate dai segnali TradingView, non dai prezzi Hyperliquid.</footer>
-    </div>
-  </main>;
+    </main>
+  );
 }

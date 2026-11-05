@@ -41,6 +41,14 @@ export function ensureSchema(): Promise<void> {
       pnl DOUBLE PRECISION NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY,
+      btc_usd DOUBLE PRECISION NOT NULL DEFAULT 500,
+      eth_usd DOUBLE PRECISION NOT NULL DEFAULT 500,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+    await db.execute(sql`INSERT INTO app_settings (id, btc_usd, eth_usd)
+      VALUES (1, 500, 500) ON CONFLICT (id) DO NOTHING`);
   })();
   return pending;
 }
