@@ -49,7 +49,7 @@ export default async function Home() {
         <p className="explain">Questo <b>unico script</b> controlla entrambe le condizioni: invia il BUY quando il VAPI tocca il livello <b>durante</b> una candela 3H; invia la chiusura della candela per valutare il SELL. Il server mantiene la posizione, gli scaglioni già comprati e le vendite già eseguite. Non servono due alert diversi per BUY e SELL.</p>
         <div className="flex flex-wrap items-center gap-3 mb-4"><PineCopy pine={PINE} /><span className="text-slate-300 text-sm">Clicca, poi incolla in TradingView → Pine Editor → Salva → Aggiungi al grafico.</span></div>
         <details className="rounded-xl border border-slate-700 bg-slate-950/80 p-4"><summary className="cursor-pointer font-semibold text-cyan-200 text-base">Mostra il codice completo sullo schermo</summary><pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre text-sm text-slate-200 leading-relaxed font-mono">{PINE}</pre></details>
-        <p className="text-sm text-slate-400 mt-3">Nel Pine Editor devi incollare <b>tutto</b>, partendo da <code>//@version=5</code>. Il vecchio script non va usato insieme a questo.</p>
+        <p className="text-sm text-amber-200 mt-3 rounded-lg border border-amber-600/40 bg-amber-950/20 px-4 py-3"><b>Prima di incollare:</b> clicca dentro l’Editor Pine, premi <b>⌘A su Mac</b> (Ctrl+A su Windows) e poi incolla. Il nuovo codice deve <b>sostituire completamente</b> il vecchio: la prima riga deve essere <code>//@version=5</code> e deve esserci <b>una sola</b> riga <code>indicator(</code> o <code>strategy(</code>. Se leggi “Your script has 2”, è rimasto del vecchio codice sopra.</p>
       </section>
 
       <section id="alert" className={card}>
