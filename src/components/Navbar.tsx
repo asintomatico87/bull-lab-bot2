@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import BullLabLogo from "@/components/BullLabLogo";
 import {
   Activity,
   Bot,
@@ -46,6 +47,7 @@ export default function Navbar({
 
   return (
     <header className="sticky top-0 z-50 bg-[#070a0f]/95 backdrop-blur-md border-b border-slate-800/80 shadow-2xl">
+      <div className="h-[2px] w-full bg-gradient-to-r from-cyan-400/70 via-blue-500/40 to-amber-500/70" />
       {/* Top Ticker Bar */}
       <div className="bg-[#05070b] border-b border-slate-800/50 px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 text-slate-400">
         <div className="flex items-center gap-6 overflow-x-auto py-0.5">
@@ -125,18 +127,19 @@ export default function Navbar({
       {/* Main Navbar Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
         {/* Brand & Logo */}
-        <div className="flex items-center gap-3.5">
-          <div className="relative group cursor-pointer" onClick={() => setActiveTab("dashboard")}>
-            <div className="relative h-12 w-44 sm:w-56 overflow-hidden rounded-lg border border-slate-700/60 shadow-lg group-hover:border-cyan-500/50 transition-all">
-              <Image
-                src="/images/bull-lab-logo.jpg"
-                alt="Bull LAB Powered by Altcoinitalia"
-                fill
-                priority
-                className="object-cover object-center"
-              />
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setActiveTab("dashboard")}
+            className="group flex items-center rounded-xl px-1 py-1 transition-all hover:bg-white/[0.03]"
+            title="Bull Lab Trading System — Dashboard"
+          >
+            <span className="lg:hidden">
+              <BullLabLogo size="md" showTagline={false} />
+            </span>
+            <span className="hidden lg:inline-flex">
+              <BullLabLogo size="lg" showTagline showFounder />
+            </span>
+          </button>
 
           {/* Asintomatico Badge */}
           <div className="hidden lg:flex items-center gap-2 pl-3 border-l border-slate-800">

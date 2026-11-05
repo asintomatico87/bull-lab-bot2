@@ -88,3 +88,50 @@ https://bot.bulllab.one/api/webhook/tradingview
 
 Da `localhost` il webhook non riceve nulla: in locale usa il pulsante
 "Controlla candela 3H reale adesso" nella scheda *Vai Live (Facile)*.
+
+---
+
+## Dopo il deploy su Vercel: verifica in 3 minuti
+
+### 1. Stato del deploy
+
+Nel progetto Vercel, in alto deve esserci **Ready** in verde.
+Se c'è **Error**: apri *Deployments → il più recente → Building* e leggi le ultime righe rosse.
+
+### 2. Le quattro variabili
+
+*Settings → Environment Variables*: devono esserci tutte, con **Production** tra gli ambienti.
+
+| Variabile | Come verificarla |
+|---|---|
+| `DATABASE_URL` | apri `/api/health`: deve dire `"ok":true` |
+| `NEXT_PUBLIC_APP_URL` | apri `/api/config-status`: voce verde |
+| `DASHBOARD_USER` | aprendo il sito compare la richiesta di credenziali |
+| `DASHBOARD_PASSWORD` | idem |
+
+Dopo aver aggiunto o modificato una variabile serve **Deployments → ⋯ → Redeploy**:
+senza, la modifica non ha effetto.
+
+### 3. I tre controlli che contano
+
+| Cosa apri | Cosa deve rispondere |
+|---|---|
+| `https://…vercel.app/` | richiesta utente+password, poi la Dashboard con i bot |
+| `https://…vercel.app/api/health` | `{"ok":true,"database":"connected"}` |
+| `https://…vercel.app/api/config-status` | database, URL e password in verde |
+
+Se `/api/health` dice `not_configured` → manca `DATABASE_URL`.
+Se dice `unreachable` → stringa errata o progetto Neon sospeso.
+
+### 4. Prova la strategia online
+
+Nella scheda **Vai Live (Facile)** premi **"Controlla candela 3H reale adesso"**:
+il motore scarica le candele dall'exchange e risponde con la decisione.
+Se funziona sul dominio, il webhook di TradingView funzionerà allo stesso modo.
+
+### 5. Ordine delle prossime cose
+
+1. Dominio `bot.bulllab.one` (Vercel Domains + CNAME su one.com)
+2. `/api/config-status` tutto verde
+3. Aggiornare l'URL webhook negli alert di TradingView
+4. 5-10 candele in paper, poi valutare le chiavi live

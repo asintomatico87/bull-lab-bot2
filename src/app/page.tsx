@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import Image from "next/image";
+import BullLabLogo from "@/components/BullLabLogo";
 import Navbar from "@/components/Navbar";
 import DashboardTab from "@/components/DashboardTab";
 import ExchangeGuideTab from "@/components/ExchangeGuideTab";
@@ -314,21 +314,10 @@ export default function HomePage() {
       <footer className="mt-auto border-t border-slate-800/80 bg-[#05070b] py-8 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="relative h-10 w-36 overflow-hidden rounded border border-slate-700/60">
-              <Image
-                src="/images/bull-lab-logo.jpg"
-                alt="Bull LAB Logo"
-                fill
-                className="object-cover"
-              />
-            </div>
-            <div>
-              <div className="text-white font-bold font-mono">
-                Bull Lab Trading System
-              </div>
-              <div className="text-[11px] text-amber-400 font-mono">
-                Powered by AltcoinItalia • by Asintomatico
-              </div>
+            <BullLabLogo size="md" showTagline={false} />
+            <div className="pl-4 border-l border-slate-800">
+              <div className="text-white font-bold font-mono">Bull Lab Trading System</div>
+              <div className="text-[11px] text-amber-400 font-mono">by Asintomatico · AltcoinItalia</div>
             </div>
           </div>
 

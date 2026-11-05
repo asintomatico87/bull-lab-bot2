@@ -184,7 +184,7 @@ export default function DashboardTab({
       {/* 4 Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {/* Total PnL */}
-        <div className="cyber-card rounded-xl p-5 border border-slate-800">
+        <div className="card-accent lift rounded-xl p-5">
           <div className="flex items-center justify-between text-xs font-mono text-slate-400 uppercase">
             <span>PnL Realizzato Totale</span>
             <Zap className="w-4 h-4 text-amber-400" />
