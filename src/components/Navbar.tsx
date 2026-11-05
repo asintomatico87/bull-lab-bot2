@@ -8,7 +8,6 @@ import {
   Bot,
   CandlestickChart,
   Cpu,
-  Crosshair,
   Layers,
   Radio,
   Rocket,
@@ -178,19 +177,6 @@ export default function Navbar({
           </button>
 
           <button
-            onClick={() => setActiveTab("vapi")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
-              activeTab === "vapi"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 glow-orange-sm"
-                : "text-amber-400/90 hover:text-amber-200 hover:bg-amber-500/10"
-            }`}
-          >
-            <Crosshair className="w-4 h-4 text-amber-400" />
-            <span>VAPI 3H</span>
-            <span className="text-[9px] font-mono bg-amber-500/20 text-amber-300 px-1 rounded">CORE</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab("ladder")}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all ${
               activeTab === "ladder"
@@ -212,7 +198,7 @@ export default function Navbar({
             }`}
           >
             <Rocket className="w-4 h-4 text-cyan-400" />
-            <span>Vai Live (Facile)</span>
+            <span>Vai Live</span>
             <span className="text-[9px] font-mono bg-cyan-500/20 text-cyan-300 px-1 rounded">NO-TV</span>
           </button>
 

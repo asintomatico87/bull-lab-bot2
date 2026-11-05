@@ -55,6 +55,7 @@ interface DashboardTabProps {
   onSelectTab: (tab: string) => void;
   onSelectBotForTradingView: (botId: number) => void;
   onEditBot: (bot: BotItem) => void;
+  onHistoryCleared?: () => void;
 }
 
 export default function DashboardTab({
@@ -66,15 +67,43 @@ export default function DashboardTab({
   onSelectTab,
   onSelectBotForTradingView,
   onEditBot,
+  onHistoryCleared,
 }: DashboardTabProps) {
+  const [clearing, setClearing] = useState(false);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
+
+  const clearHistory = async () => {
+    if (!confirm("Cancellare tutti gli ordini di test e azzerare le scale? I bot e le secret restano.")) return;
+    setClearing(true);
+    setClearMsg(null);
+    try {
+      const res = await fetch("/api/admin/clear-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "CLEAR" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setClearMsg("Storico pulito. Scale a 0/3.");
+        onHistoryCleared?.();
+      } else {
+        setClearMsg(data.error || "Operazione non riuscita");
+      }
+    } catch (e) {
+      setClearMsg(String(e));
+    } finally {
+      setClearing(false);
+    }
+  };
   const [copiedSecretId, setCopiedSecretId] = useState<number | null>(null);
 
-  const totalPnL = bots.reduce((acc, b) => acc + Number(b.totalPnL || 0), 0);
-  const activeBots = bots.filter((b) => b.status === "active").length;
-  const totalWins = bots.reduce((acc, b) => acc + (b.winCount || 0), 0);
-  const totalLosses = bots.reduce((acc, b) => acc + (b.lossCount || 0), 0);
+  const visibleBots = bots.filter((b) => b.strategyKey === "vapi_ladder");
+  const totalPnL = visibleBots.reduce((acc, b) => acc + Number(b.totalPnL || 0), 0);
+  const activeBots = visibleBots.filter((b) => b.status === "active").length;
+  const totalWins = visibleBots.reduce((acc, b) => acc + (b.winCount || 0), 0);
+  const totalLosses = visibleBots.reduce((acc, b) => acc + (b.lossCount || 0), 0);
   const totalTradesCount = totalWins + totalLosses;
-  const globalWinRate = totalTradesCount > 0 ? ((totalWins / totalTradesCount) * 100).toFixed(1) : "67.5";
+  const globalWinRate = totalTradesCount > 0 ? ((totalWins / totalTradesCount) * 100).toFixed(1) : "—";
 
   const handleCopySecret = (botId: number, secret: string) => {
     navigator.clipboard.writeText(secret);
@@ -117,7 +146,7 @@ export default function DashboardTab({
               </span>
             </h1>
             <p className="mt-2 text-slate-300 text-xs sm:text-sm leading-relaxed">
-              Strategia core sul <strong className="text-amber-300">VAPI 3H di LazyBear</strong>: ordini a soglia di accumulazione/distribuzione con validazione server-side dei livelli. Esecuzione no-KYC su DEX (Hyperliquid) o CEX (OurBit, Bitbase, Bybit) via webhook TradingView.
+              Sistema di trading automatizzato basato su dati quantitativi, con ordini a soglia di accumulazione e distribuzione.
             </p>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -142,7 +171,7 @@ export default function DashboardTab({
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 text-xs font-bold transition-all glow-cyan-sm"
               >
                 <Zap className="w-4 h-4 text-cyan-400" />
-                <span>Vai Live (Anche SENZA TradingView)</span>
+                <span>Vai Live</span>
               </button>
 
               <button
@@ -165,9 +194,9 @@ export default function DashboardTab({
                   AVIDITÀ
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
-                Momentum 24h: +15.7% | Ampiezza: +12
-              </div>
+              <p className="text-[10px] text-slate-400 mt-2 leading-relaxed normal-case tracking-normal">
+                Lettura composita 0–100 da dati di mercato, non una previsione: momentum BTC 24h, ampiezza del listino, variazione dei volumi, cambio di dominanza BTC, direzione a 7 giorni e tono delle notizie. Non costituisce consulenza finanziaria.
+              </p>
             </div>
 
             <div className="cyber-card p-4 rounded-xl border border-slate-800 text-xs font-mono">
@@ -209,7 +238,7 @@ export default function DashboardTab({
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white">
             <span className="text-cyan-400">{activeBots}</span>
-            <span className="text-slate-500 text-lg"> / {bots.length}</span>
+            <span className="text-slate-500 text-lg"> / {visibleBots.length}</span>
           </div>
           <div className="mt-1 text-xs text-emerald-400 font-mono flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -224,7 +253,7 @@ export default function DashboardTab({
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-emerald-400">
-            {globalWinRate}%
+            {totalTradesCount > 0 ? `${globalWinRate}%` : "—"}
           </div>
           <div className="mt-1 text-xs text-slate-400 font-mono">
             {totalWins} Vittorie / {totalLosses} Perdite
@@ -238,10 +267,10 @@ export default function DashboardTab({
             <Activity className="w-4 h-4 text-purple-400" />
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white">
-            {totalTradesCount > 0 ? totalTradesCount : 51}
+            {recentOrders.length}
           </div>
           <div className="mt-1 text-xs text-slate-400 font-mono">
-            Zero ordini falliti
+            Solo esecuzioni registrate
           </div>
         </div>
       </div>
@@ -252,7 +281,7 @@ export default function DashboardTab({
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-cyan-400" />
             <h2 className="text-lg font-bold text-white uppercase font-mono">
-              I Tuoi Bot di Trading Automatizzati ({bots.length})
+              I Tuoi Bot di Trading Automatizzati ({visibleBots.length})
             </h2>
           </div>
 
@@ -267,7 +296,7 @@ export default function DashboardTab({
 
         {/* Bots Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {bots.map((bot) => {
+          {visibleBots.map((bot) => {
             const isRunning = bot.status === "active";
             const platformBadge = getPlatformLabel(bot.platform);
             const botPnL = Number(bot.totalPnL || 0);
@@ -393,7 +422,7 @@ export default function DashboardTab({
                     <div className="flex items-center justify-between">
                       <span className="text-amber-300 font-bold uppercase flex items-center gap-1">
                         <Zap className="w-3 h-3" />
-                        VAPI LazyBear · 3H Level Engine
+                        Scala 3H · soglie accumulo/distribuzione
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-emerald-400">
@@ -475,13 +504,26 @@ export default function DashboardTab({
               Ultime Esecuzioni del Sistema
             </h3>
           </div>
-          <button
-            onClick={() => onSelectTab("orders")}
-            className="text-xs font-mono text-cyan-400 hover:text-cyan-300"
-          >
-            Vedi tutti gli ordini →
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={clearHistory}
+              disabled={clearing}
+              className="text-[10px] font-mono font-bold px-2 py-1 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-950/40 disabled:opacity-50"
+            >
+              {clearing ? "Pulizia..." : "Pulisci storico test"}
+            </button>
+            <button
+              onClick={() => onSelectTab("orders")}
+              className="text-xs font-mono text-cyan-400 hover:text-cyan-300"
+            >
+              Vedi tutti gli ordini →
+            </button>
+          </div>
         </div>
+
+        {clearMsg && (
+          <div className="mb-3 text-[11px] font-mono text-emerald-300">{clearMsg}</div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">

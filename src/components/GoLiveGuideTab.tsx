@@ -18,6 +18,7 @@ import {
   Key,
   Layers,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import DeployWizard from "@/components/DeployWizard";
 import DownloadPanel from "@/components/DownloadPanel";
@@ -871,8 +872,12 @@ export default function GoLiveGuideTab({
                 I Tuoi Cassieri Collegati ({profiles.length})
               </h3>
             </div>
-            <span className="text-xs font-mono text-emerald-400">Pronti per esecuzione</span>
+            <span className="text-xs font-mono text-slate-500">Solo profili inseriti da te</span>
           </div>
+
+          {profiles.length === 0 && (
+            <p className="text-xs text-slate-500 font-mono">Nessun cassiere reale. Aggiungilo dal modulo a sinistra.</p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {profiles.map((p) => (
@@ -885,21 +890,31 @@ export default function GoLiveGuideTab({
                     <div className="text-sm font-bold text-white">{p.name}</div>
                     <div className="text-[11px] font-mono text-cyan-400">{p.platformKey}</div>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
-                      p.isTestnet
-                        ? "bg-cyan-950/60 text-cyan-300 border-cyan-500/40"
-                        : "bg-amber-950/60 text-amber-300 border-amber-500/40"
-                    }`}
-                  >
-                    {p.isTestnet ? "PAPER / TESTNET" : "LIVE MAINNET"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                        p.isTestnet
+                          ? "bg-cyan-950/60 text-cyan-300 border-cyan-500/40"
+                          : "bg-amber-950/60 text-amber-300 border-amber-500/40"
+                      }`}
+                    >
+                      {p.isTestnet ? "PAPER / TESTNET" : "LIVE MAINNET"}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Eliminare questo cassiere?")) return;
+                        await fetch(`/api/exchanges?id=${p.id}`, { method: "DELETE" });
+                        fetchProfiles();
+                      }}
+                      className="p-1 rounded text-slate-500 hover:text-rose-400"
+                      title="Elimina"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400 pt-2 border-t border-slate-800/80">
                   <span>Key: {p.apiKeyMasked || "Configurata"}</span>
-                  <span className="text-emerald-400 font-bold">
-                    ${Number(p.balanceUsdt || 0).toLocaleString()} USDT
-                  </span>
                 </div>
               </div>
             ))}

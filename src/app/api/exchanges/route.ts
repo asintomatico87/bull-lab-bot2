@@ -2,14 +2,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { exchangeProfiles } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { isDemoCashier } from "@/lib/demo-data";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const profiles = await db
-      .select()
-      .from(exchangeProfiles)
-      .orderBy(desc(exchangeProfiles.id));
-    return NextResponse.json({ profiles });
+    const { searchParams } = new URL(request.url);
+    const includeDemo = searchParams.get("all") === "1";
+    const rows = await db.select().from(exchangeProfiles).orderBy(desc(exchangeProfiles.id));
+    const profiles = includeDemo ? rows : rows.filter((p) => !isDemoCashier(p));
+    return NextResponse.json({
+      profiles,
+      hiddenDemo: rows.length - profiles.length,
+    });
   } catch (error) {
     console.error("Failed to fetch exchange profiles:", error);
     return NextResponse.json({ error: "Impossibile caricare i profili exchange" }, { status: 500 });
@@ -56,6 +60,32 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Failed to create exchange profile:", error);
     return NextResponse.json({ error: "Errore nel salvataggio della connessione" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const purgeDemo = searchParams.get("purgeDemo") === "1";
+
+    if (purgeDemo) {
+      const rows = await db.select().from(exchangeProfiles);
+      const demo = rows.filter((p) => isDemoCashier(p));
+      for (const p of demo) {
+        await db.delete(exchangeProfiles).where(eq(exchangeProfiles.id, p.id));
+      }
+      return NextResponse.json({ success: true, removed: demo.length });
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "ID mancante" }, { status: 400 });
+    }
+    await db.delete(exchangeProfiles).where(eq(exchangeProfiles.id, Number(id)));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete exchange profile:", error);
+    return NextResponse.json({ error: "Impossibile eliminare il profilo" }, { status: 500 });
   }
 }
 

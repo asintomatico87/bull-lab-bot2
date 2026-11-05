@@ -214,6 +214,10 @@ export default function HomePage() {
                   setModalInitialData(bot);
                   setIsCreateModalOpen(true);
                 }}
+                onHistoryCleared={() => {
+                  fetchBots();
+                  fetchOrders();
+                }}
               />
             )}
 
