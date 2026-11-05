@@ -1,100 +1,109 @@
-/**
- * Regole Bull Lab — "VAPI LADDER 3H" (LazyBear VAPI, periodo 10, BTC/ETH).
- * Confermate dal vecchio script Pine:
- *  R1 max 3 BUY per ciclo, nessuno stop loss
- *  R2 max 1 BUY per candela 3H (in assoluto, non per scaglione)
- *  R3 size 1× / 1,5× / 2,5× su una base in USD
- *  R4 BUY quando VAPI ≤ −25 / −32 / −40
- *  R5 ogni scaglione si riempie una sola volta e in ordine (ladder)
- *  R6 uscite a chiusura 3H sui livelli VAPI (≥ 0/15/22 con 3 BUY, ≥ 5/15 con 2, ≥ 12 con 1 BUY)
- */
+import { db } from "@/db";
+import { cycles, trades } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 
-export const SUPPORTED_COINS = ["BTC", "ETH"] as const;
-export type Coin = (typeof SUPPORTED_COINS)[number];
+// ============================================================
+// BULL LAB — VAPI LADDER 3H (Martingale ladder on LazyBear VAPI)
+// R1  max 3 buys, NO stop loss, hold while the ladder is full
+// R2  max 1 buy per 3H candle
+// R3  size ladder 1x / 1.5x / 2.5x on base size (default 500 USDT)
+// R4  buy levels VAPI <= -25 / <= -32 / <= -40
+// R5  one buy per level rung (each rung fills once per cycle)
+// R6  exits: 3 buys -> 50% @ >= 0, 50% of remainder @ >= 15, close all @ >= 22
+//              2 buys -> 50% @ >= 5, close rest @ >= 15
+//              1 buy  -> 100% @ >= 12
+// BUY  trigger: INTRABAR (touch) — SELL trigger: BAR CLOSE only
+// ============================================================
+export const LEVELS = [-25, -32, -40];
+export const SIZES = [1, 1.5, 2.5];
+export const SYMBOLS = ["BTC", "ETH"];
+export const BASE_USD = Number(process.env.BASE_USD || 500); // R3: base size 500 USDT
+export const FEE = Number(process.env.FEE_BPS || 3.5) / 10000; // 0.035% come nel backtest
 
-export const TIMEFRAME_MINUTES = 180; // 3H
-export const TIMEFRAME_MS = TIMEFRAME_MINUTES * 60_000;
-export const VAPI_PERIOD = 10;
-export const MAX_BUYS_PER_CYCLE = 3;
-export const STOP_LOSS = false;
-
-export type BuyTier = { tier: 1 | 2 | 3; vapi: number; size: number };
-
-/** BUY intrabar quando VAPI ≤ soglia. size = multiplo dell'unità in USD. */
-export const BUY_TIERS: readonly BuyTier[] = [
-  { tier: 1, vapi: -25, size: 1 },
-  { tier: 2, vapi: -32, size: 1.5 },
-  { tier: 3, vapi: -40, size: 2.5 },
-];
-
-export type ExitStep = {
-  /** Livello VAPI che fa scattare lo scaglione di uscita. */
-  minVapi: number;
-  /** Frazione della posizione RESIDUA da vendere (1 = chiude tutto). */
-  sellFraction: number;
-  label: string;
+export type Signal = {
+  symbol: string;
+  event: "touch" | "close";
+  vapi: number;
+  price: number;
+  bar_time: string;
 };
 
-/** Uscite a CHIUSURA 3H, in funzione del numero di BUY del ciclo. Nessuno stop loss. */
-export const EXIT_PLANS: Record<number, readonly ExitStep[]> = {
-  1: [{ minVapi: 12, sellFraction: 1, label: "VAPI ≥ 12 → chiude tutto" }],
-  2: [
-    { minVapi: 5, sellFraction: 0.5, label: "VAPI ≥ 5 → vende 50%" },
-    { minVapi: 15, sellFraction: 1, label: "VAPI ≥ 15 → chiude il resto" },
-  ],
-  3: [
-    { minVapi: 0, sellFraction: 0.5, label: "VAPI ≥ 0 → vende 50%" },
-    { minVapi: 15, sellFraction: 0.5, label: "VAPI ≥ 15 → vende metà del rimanente" },
-    { minVapi: 22, sellFraction: 1, label: "VAPI ≥ 22 → chiude tutto" },
-  ],
-};
-
-export function tierDef(tier: number): BuyTier | undefined {
-  return BUY_TIERS.find((t) => t.tier === tier);
+export function normalizeSymbol(s: string): string {
+  const u = s.toUpperCase().replace(/^(BINANCE|HYPERLIQUID):?/, "").replace(/USDT.*/, "");
+  if (u === "BTC" || u === "XBT") return "BTC";
+  if (u === "ETH") return "ETH";
+  return u;
 }
 
-/** Prossimo scaglione del ladder (quello che può essere comprato ora). */
-export function nextBuyTier(buyCount: number): BuyTier | undefined {
-  if (buyCount >= MAX_BUYS_PER_CYCLE) return undefined;
-  return tierDef(buyCount + 1);
+async function getOpenCycle(symbol: string) {
+  const [c] = await db.select().from(cycles).where(and(eq(cycles.symbol, symbol), eq(cycles.status, "open"))).limit(1);
+  return c;
 }
 
-/** Scaglioni con livello toccato (solo informativo: il ladder resta in ordine). */
-export function touchedTiers(vapi: number): BuyTier[] {
-  return BUY_TIERS.filter((t) => vapi <= t.vapi);
-}
+export async function processSignal(s: Signal): Promise<{ status: string; reason: string }> {
+  const symbol = normalizeSymbol(s.symbol);
+  if (!SYMBOLS.includes(symbol)) return { status: "ignored", reason: `Ticker non gestito: ${s.symbol}` };
+  if (!Number.isFinite(s.vapi) || !Number.isFinite(s.price) || s.price <= 0)
+    return { status: "rejected", reason: "vapi/price non numerici: controlla i placeholder nel messaggio alert" };
 
-export function pnlPct(price: number, avgEntry: number): number {
-  if (!(avgEntry > 0)) return 0;
-  return (price / avgEntry - 1) * 100;
-}
+  const c = await getOpenCycle(symbol);
 
-/** Scaglione di uscita raggiunto dal VAPI corrente (null se nessuno). */
-export function nextExitStep(
-  buyCount: number,
-  exitStage: number,
-  vapi: number,
-): { step: ExitStep; stageIndex: number } | null {
-  const plan = EXIT_PLANS[Math.min(Math.max(buyCount, 1), MAX_BUYS_PER_CYCLE)];
-  const step = plan?.[exitStage];
-  if (!step) return null;
-  if (vapi >= step.minVapi) return { step, stageIndex: exitStage };
-  return null;
-}
+  if (s.event === "touch") {
+    const entries = c?.entries ?? 0;
+    if (entries >= 3) return { status: "ignored", reason: "Scala già completa (3 BUY)" };
+    if (c && c.exitStage > 0) return { status: "ignored", reason: "Ciclo in fase di uscita: nuovi BUY bloccati (sells>0)" };
+    const level = LEVELS[entries]; // R4 + R5: solo lo scalino successivo, una volta per ciclo
+    if (s.vapi > level) return { status: "ignored", reason: `VAPI ${s.vapi.toFixed(2)} > ${level} (scalino #${entries + 1})` };
+    const key = String(entries + 1);
+    if (c && Object.values(c.lastBuyBars).includes(s.bar_time)) return { status: "ignored", reason: "R2: già 1 BUY su questa candela 3H" };
 
-/** Prossimo target da mostrare in dashboard, indipendentemente dal VAPI corrente. */
-export function upcomingExit(buyCount: number, exitStage: number): ExitStep | null {
-  const plan = EXIT_PLANS[Math.min(Math.max(buyCount, 1), MAX_BUYS_PER_CYCLE)];
-  return plan?.[exitStage] ?? null;
-}
+    const usd = BASE_USD * SIZES[entries]; // R3: 500 / 750 / 1250 USDT
+    const qty = usd / s.price;
+    const cost = usd * (1 + FEE);
+    let cycleId: number;
+    if (!c) {
+      const [n] = await db.insert(cycles).values({ symbol, entries: 1, qty, cost, lastBuyBars: { [key]: s.bar_time } }).returning();
+      cycleId = n.id;
+    } else {
+      await db.update(cycles).set({ entries: entries + 1, qty: c.qty + qty, cost: c.cost + cost, lastBuyBars: { ...c.lastBuyBars, [key]: s.bar_time } }).where(eq(cycles.id, c.id));
+      cycleId = c.id;
+    }
+    await db.insert(trades).values({ cycleId, symbol, side: "BUY", level: entries + 1, price: s.price, qty, vapi: s.vapi, barTime: s.bar_time, note: `BUY rung ${key} @VAPI≤${level} · ${usd} USDT (${SIZES[entries]}×)` });
+    return { status: "executed", reason: `PAPER BUY rung ${key} ${symbol} ${qty.toFixed(6)} @ ${s.price}` };
+  }
 
-/** Inizio (UTC) della candela 3H che contiene il timestamp. */
-export function floorToBar(date: Date): Date {
-  return new Date(Math.floor(date.getTime() / TIMEFRAME_MS) * TIMEFRAME_MS);
-}
+  // ---- SELL: solo a chiusura candela (barstate.isconfirmed) ----
+  if (!c) return { status: "ignored", reason: "Chiusura candela: nessun ciclo aperto" };
+  const v = s.vapi;
+  const steps: { frac: number; note: string; stage: number }[] = [];
+  let stage = c.exitStage;
+  if (c.entries === 1) {
+    if (v >= 12) steps.push({ frac: 1, note: "R6 · 1 BUY: VAPI≥12 chiude 100%", stage: 9 });
+  } else if (c.entries === 2) {
+    if (v >= 15) steps.push({ frac: 1, note: "R6 · 2 BUY: VAPI≥15 chiude il resto", stage: 9 });
+    else if (stage === 0 && v >= 5) steps.push({ frac: 0.5, note: "R6 · 2 BUY: VAPI≥5 vende 50%", stage: 1 });
+  } else if (c.entries === 3) {
+    if (v >= 22) steps.push({ frac: 1, note: "R6 · 3 BUY: VAPI≥22 chiude tutto", stage: 9 });
+    else {
+      if (stage === 0 && v >= 0) steps.push({ frac: 0.5, note: "R6 · 3 BUY: VAPI≥0 vende 50%", stage: 1 });
+      if (stage === 1 && v >= 15) steps.push({ frac: 0.5, note: "R6 · 3 BUY: VAPI≥15 vende metà del rimanente", stage: 2 });
+    }
+  }
+  if (!steps.length) return { status: "ignored", reason: `Chiusura: VAPI ${v.toFixed(2)}, nessuna uscita (BUY=${c.entries}, stage=${c.exitStage})` };
 
-/** True se `now` è vicino a un confine di candela 3H (chiusura): da −60s a +10min. */
-export function isNearBarClose(now: Date, afterMs = 10 * 60_000, beforeMs = 60_000): boolean {
-  const into = now.getTime() % TIMEFRAME_MS;
-  return into <= afterMs || into >= TIMEFRAME_MS - beforeMs;
+  let qty = c.qty, cost = c.cost, pnl = c.realizedPnl;
+  const notes: string[] = [];
+  let finalStage = c.exitStage;
+  for (const st of steps) {
+    const sq = qty * st.frac;
+    const sc = cost * st.frac;
+    const proceeds = sq * s.price * (1 - FEE);
+    pnl += proceeds - sc;
+    qty -= sq; cost -= sc; finalStage = st.stage;
+    await db.insert(trades).values({ cycleId: c.id, symbol, side: "SELL", level: st.stage, price: s.price, qty: sq, vapi: v, barTime: s.bar_time, note: st.note, pnl: proceeds - sc });
+    notes.push(st.note);
+  }
+  const closed = finalStage === 9 || qty < 1e-12;
+  await db.update(cycles).set({ qty: closed ? 0 : qty, cost: closed ? 0 : cost, realizedPnl: pnl, exitStage: finalStage, status: closed ? "closed" : "open", closedAt: closed ? new Date() : null }).where(eq(cycles.id, c.id));
+  return { status: "executed", reason: `PAPER SELL ${symbol}: ${notes.join(" + ")}` };
 }

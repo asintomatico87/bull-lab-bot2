@@ -9,14 +9,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@nktkas/hyperliquid": "^0.33.3",
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "pg": "8.20.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "viem": "^2.57.16"
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.17",

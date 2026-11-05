@@ -1,127 +1,82 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Orbitron", "Rajdhani", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Rajdhani", ui-sans-serif, system-ui, sans-serif;
-  --color-bull-black: #04060b;
-  --color-bull-panel: #070b13;
-  --color-bull-orange: #ff8a1e;
-  --color-bull-amber: #ffb347;
-  --color-bull-blue: #2aa8ff;
-  --color-bull-cyan: #45e6ff;
+  --font-display: "Orbitron", ui-sans-serif, sans-serif;
+  --font-body: "Rajdhani", ui-sans-serif, sans-serif;
+  --font-tech: "Share Tech Mono", ui-monospace, monospace;
+  --color-neon: #ff7a18;
+  --color-cyber: #22d3ee;
+  --color-abyss: #04060b;
 }
 
 html {
-  color-scheme: dark;
+  background: #04060b;
 }
 
 body {
-  font-family: var(--font-sans);
-  background-color: #04060b;
-  background-image:
-    radial-gradient(1100px 620px at 12% -10%, rgba(42, 168, 255, 0.16), transparent 60%),
-    radial-gradient(1000px 560px at 92% 0%, rgba(255, 122, 24, 0.18), transparent 62%),
-    radial-gradient(700px 700px at 50% 120%, rgba(69, 230, 255, 0.08), transparent 65%),
-    linear-gradient(180deg, #04060b 0%, #05070d 45%, #030407 100%);
-  background-attachment: fixed;
-}
-
-/* griglia tecnica di fondo */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image:
-    linear-gradient(rgba(120, 170, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 170, 255, 0.05) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(circle at 50% 0%, black, transparent 78%);
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image: url("/images/bg-neon.jpg");
-  background-size: cover;
-  background-position: center;
-  opacity: 0.16;
-  mix-blend-mode: screen;
-}
-
-/* wordmark Bull Lab */
-.brand-metal {
-  background: linear-gradient(180deg, #ffffff 0%, #cfd6df 35%, #7e8b9b 55%, #eef3f8 78%, #9aa6b4 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 2px 10px rgba(120, 190, 255, 0.35));
-  letter-spacing: -0.02em;
-}
-
-.brand-lab {
-  background: linear-gradient(180deg, #ffc46b 0%, #ff8a1e 45%, #ff5e00 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 24px rgba(255, 138, 30, 0.55);
-}
-
-.neon-panel {
-  position: relative;
-  border: 1px solid rgba(148, 180, 220, 0.14);
+  font-family: var(--font-body);
+  color: #e2e8f0;
   background:
-    linear-gradient(180deg, rgba(11, 16, 26, 0.92) 0%, rgba(6, 9, 16, 0.94) 100%);
-  box-shadow:
-    0 0 0 1px rgba(4, 6, 11, 0.6),
-    0 18px 40px -24px rgba(0, 0, 0, 0.9),
-    inset 0 1px 0 rgba(220, 235, 255, 0.06);
-  backdrop-filter: blur(6px);
+    radial-gradient(1100px 500px at 12% -5%, rgba(34, 211, 238, 0.10), transparent 60%),
+    radial-gradient(900px 520px at 95% 15%, rgba(255, 122, 24, 0.10), transparent 60%),
+    radial-gradient(1200px 700px at 50% 120%, rgba(59, 130, 246, 0.07), transparent 60%),
+    #04060b;
+  min-height: 100vh;
 }
 
-.neon-panel::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(42, 168, 255, 0.7), rgba(255, 138, 30, 0.7), transparent);
-  opacity: 0.75;
-}
-
-.neon-chip {
-  border: 1px solid rgba(148, 180, 220, 0.18);
-  background: rgba(8, 12, 20, 0.8);
-}
-
-.glow-orange {
-  box-shadow: 0 0 26px -6px rgba(255, 138, 30, 0.55);
-}
-
-.glow-blue {
-  box-shadow: 0 0 26px -6px rgba(42, 168, 255, 0.55);
-}
-
-.grid-fade {
+/* griglia cyberpunk di sfondo */
+.bg-grid {
   background-image:
-    linear-gradient(rgba(69, 230, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(69, 230, 255, 0.08) 1px, transparent 1px);
-  background-size: 22px 22px;
+    linear-gradient(rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.35) 70%, rgba(0,0,0,0.6));
+}
+
+/* scanline sopra tutto */
+.scanlines::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0px, rgba(0, 0, 0, 0.14) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode: multiply;
+}
+
+.glow-cyan {
+  text-shadow: 0 0 14px rgba(34, 211, 238, 0.75);
+}
+.glow-orange {
+  text-shadow: 0 0 14px rgba(255, 122, 24, 0.8);
+}
+
+.blk {
+  background: linear-gradient(180deg, rgba(15, 21, 30, 0.92), rgba(8, 11, 17, 0.96));
+  border: 1px solid rgba(51, 65, 85, 0.55);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.04), 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.blk-orange {
+  border-color: rgba(255, 122, 24, 0.35);
+  box-shadow: 0 0 18px rgba(255, 122, 24, 0.10), 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.blk-cyan {
+  border-color: rgba(34, 211, 238, 0.30);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.08), 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 ::-webkit-scrollbar {
-  height: 8px;
   width: 8px;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(120, 150, 190, 0.25);
-  border-radius: 999px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #060a10;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.4);
 }
