@@ -19,11 +19,11 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
-import type { LadderConfig } from "@/lib/vapi-ladder";
+import type { LadderConfig, LadderTarget } from "@/lib/vapi-ladder";
 import { generateLadderPineScript } from "@/lib/vapi-ladder-pine";
 
 const RULES = [
-  { n: "R1", title: "Max 3 acquisti", text: "Nessuno stop loss: il ciclo paper/simulato può mantenere la posizione aperta dopo il terzo buy." },
+  { n: "R1", title: "Max 3 acquisti", text: "Nessuno stop loss: con 3 buy il bot resta a mercato e mantiene la posizione." },
   { n: "R2", title: "1 buy per candela 3H", text: "Mai due acquisti nella stessa candela: un fill massimo per barra." },
   { n: "R3", title: "Martingala 1x / 1,5x / 2,5x", text: "La size del primo buy è la base; il secondo 1,5x, il terzo 2,5x." },
   { n: "R4", title: "Livelli VAPI ≤ -25 / -32 / -40", text: "Ogni scaglione scatta solo al raggiungimento della propria soglia." },
@@ -59,16 +59,15 @@ interface LadderBot {
   pair: string;
   webhookSecret: string;
   status?: string;
-  totalPnL?: string;
-  config?: Record<string, any> | null;
 }
 
 interface VapiLadderTabProps {
   onPublishBot: (payload: Record<string, unknown>) => Promise<void>;
-  bots: LadderBot[];
+  /** tutti i bot ladder presenti: lo script deve usare quello dell'asset selezionato */
+  allLadderBots?: LadderBot[];
 }
 
-export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps) {
+export default function VapiLadderTab({ onPublishBot, allLadderBots = [] }: VapiLadderTabProps) {
   const [pair, setPair] = useState<string>("BTC/USDT");
   const [config, setConfig] = useState<LadderConfig>(DEFAULT_CONFIG);
   const [data, setData] = useState<any>(null);
@@ -77,20 +76,9 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
   const [publishing, setPublishing] = useState<boolean>(false);
   const [flash, setFlash] = useState<string | null>(null);
 
-  const existingBot = bots.find((bot) => bot.pair.toUpperCase() === pair.toUpperCase()) ?? null;
-  useEffect(() => {
-    const saved = existingBot?.config;
-    const savedBase = Number(saved?.baseSizeUsdt);
-    const savedCapital = Number(saved?.capital);
-    const savedFee = Number(saved?.feePct);
-    setConfig({
-      ...DEFAULT_CONFIG,
-      baseSizeUsdt: Number.isFinite(savedBase) && savedBase >= 10 ? savedBase : DEFAULT_CONFIG.baseSizeUsdt,
-      capital: Number.isFinite(savedCapital) && savedCapital >= 100 ? savedCapital : DEFAULT_CONFIG.capital,
-      feePct: Number.isFinite(savedFee) && savedFee >= 0 ? savedFee : DEFAULT_CONFIG.feePct,
-    });
-  }, [existingBot?.id, existingBot?.config]);
-  const secret = existingBot?.webhookSecret || "CREA_PRIMA_IL_BOT_PER_QUESTO_ASSET";
+  // bot dell'asset selezionato (BTC o ETH): ogni asset ha la sua secret
+  const existingBot = allLadderBots.find((b) => (b.pair ?? "").toUpperCase() === pair.toUpperCase()) ?? null;
+  const secret = existingBot?.webhookSecret || "CREA_PRIMA_IL_BOT";
   const ticker = pair.includes("ETH") ? "ETHUSDT" : "BTCUSDT";
 
   const load = useCallback(async () => {
@@ -116,7 +104,6 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
   }, [pair]);
 
   const stats = data?.stats;
-  // This state belongs to the synthetic backtest below, not to the live paper bot.
   const state = data?.state;
   const events: any[] = data?.events ?? [];
   const cycles: any[] = data?.cycles ?? [];
@@ -125,8 +112,16 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
 
   const pineScript = useMemo(
     () =>
-      generateLadderPineScript({ config, secret, ticker }),
-    [config, secret, ticker]
+      generateLadderPineScript({
+        config,
+        secret,
+        ticker,
+        qtyPerRung: config.multipliers.map((multiplier) => {
+          const price = state?.price || (pair.includes("ETH") ? 2480 : 84250);
+          return Math.round(((config.baseSizeUsdt * multiplier) / price) * 1e6) / 1e6;
+        }),
+      }),
+    [config, secret, ticker, state?.price, pair]
   );
 
   const copyScript = async () => {
@@ -153,7 +148,7 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
         pair,
         strategyKey: "vapi_ladder",
         timeframe: "3h",
-        platform: "paper_trading",
+        platform: "hyperliquid_dex",
         mode: "paper",
         leverage: 1,
         orderSizeUsdt: config.baseSizeUsdt,
@@ -176,6 +171,18 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
     } finally {
       setPublishing(false);
     }
+  };
+
+  const updatePlan = (key: string, index: number, field: keyof LadderTarget, value: number) => {
+    setConfig((prev) => ({
+      ...prev,
+      plans: {
+        ...prev.plans,
+        [key]: prev.plans[key].map((target, i) =>
+          i === index ? { ...target, [field]: value } : target
+        ),
+      },
+    }));
   };
 
   // equity chart geometry
@@ -221,7 +228,7 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             </h1>
             <p className="mt-2 text-slate-300 text-xs sm:text-sm leading-relaxed">
               Non è complicata: è una scala a tre gradini sull&apos;oscillatore VAPI, con size martingala, un solo
-              acquisto per candela e per scaglione, e uscite progressive in base al numero di acquisti simulati. Nessuno
+              acquisto per candela e per scaglione, e uscite progressive in base al numero di buy a mercato. Nessuno
               stop loss. Tutte le 6 regole sono implementate nel motore, nel backtest, nel Pine Script e nel gate del
               webhook.
             </p>
@@ -234,11 +241,11 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             </div>
           </div>
 
-          {/* SYNTHETIC BACKTEST STATE CARD */}
+          {/* LIVE STATE CARD */}
           <div className="cyber-card rounded-2xl p-5 border border-cyan-500/40 min-w-[280px] space-y-2">
             <div className="flex items-center justify-between text-[10px] font-mono uppercase text-slate-400">
               <span className="flex items-center gap-1.5">
-                <Gauge className="w-3.5 h-3.5 text-cyan-400" /> Stato backtest sintetico
+                <Gauge className="w-3.5 h-3.5 text-cyan-400" /> Stato scala live
               </span>
               <span className="text-slate-500">{state?.time ?? "--:--"}</span>
             </div>
@@ -273,15 +280,15 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             </div>
             <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
               <div className="p-1.5 rounded bg-[#06090e] border border-slate-800">
-                <div className="text-slate-500">Buy simulati</div>
+                <div className="text-slate-500">Buy a mercato</div>
                 <div className="text-cyan-300 font-bold">{state?.buys ?? 0} / {config.maxBuys}</div>
               </div>
               <div className="p-1.5 rounded bg-[#06090e] border border-slate-800">
-                <div className="text-slate-500">Investito simulato</div>
+                <div className="text-slate-500">Investito</div>
                 <div className="text-white font-bold">${(state?.investedUsdt ?? 0).toLocaleString()}</div>
               </div>
               <div className="p-1.5 rounded bg-[#06090e] border border-slate-800">
-                <div className="text-slate-500">Prossimo livello simulato</div>
+                <div className="text-slate-500">Prossimo buy</div>
                 <div className="text-emerald-400 font-bold">
                   {state?.nextRung ? `≤ ${state.nextRung.level} (${state.nextRung.sizeUsdt}$)` : "ladder piena"}
                 </div>
@@ -294,7 +301,7 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
               </div>
             </div>
             <div className="text-[10px] font-mono text-slate-500 flex items-center justify-between">
-              <span>PnL simulato</span>
+              <span>PnL aperto</span>
               <span className={(state?.unrealizedUsdt ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {(state?.unrealizedUsdt ?? 0) >= 0 ? "+" : ""}${state?.unrealizedUsdt ?? 0} ({state?.unrealizedPct ?? 0}%)
               </span>
@@ -316,10 +323,6 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             <p className="mt-1.5 text-[11px] text-slate-400 leading-snug">{rule.text}</p>
           </div>
         ))}
-      </div>
-
-      <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-100/90">
-        Il grafico e il backtest qui sotto usano una serie sintetica dimostrativa, non dati storici di mercato. In questa fase non interpretarli come performance reali; il paper fill viene invece calcolato dagli alert TradingView ricevuti.
       </div>
 
       {flash && (
@@ -376,23 +379,33 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
           </div>
 
           <div>
-            <label className="text-[11px] font-mono text-slate-400">Regole condivise e fisse · livelli VAPI / moltiplicatori</label>
+            <label className="text-[11px] font-mono text-slate-400">Livelli buy (R4) e moltiplicatori (R3)</label>
             <div className="mt-1 space-y-1.5">
               {config.levels.map((level, index) => (
                 <div key={index} className="grid grid-cols-2 gap-1.5">
                   <input
                     type="number"
+                    step="0.5"
                     value={level}
-                    readOnly
-                    aria-label={`Livello VAPI ${index + 1} fisso`}
-                    className="bg-[#06090e] border border-slate-700 rounded px-2 py-1 text-xs font-mono text-emerald-300 font-bold cursor-not-allowed"
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        levels: prev.levels.map((l, i) => (i === index ? Number(e.target.value) : l)),
+                      }))
+                    }
+                    className="bg-[#06090e] border border-slate-700 rounded px-2 py-1 text-xs font-mono text-emerald-300 font-bold"
                   />
                   <input
                     type="number"
+                    step="0.5"
                     value={config.multipliers[index]}
-                    readOnly
-                    aria-label={`Moltiplicatore ${index + 1} fisso`}
-                    className="bg-[#06090e] border border-slate-700 rounded px-2 py-1 text-xs font-mono text-amber-300 font-bold cursor-not-allowed"
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        multipliers: prev.multipliers.map((m, i) => (i === index ? Number(e.target.value) : m)),
+                      }))
+                    }
+                    className="bg-[#06090e] border border-slate-700 rounded px-2 py-1 text-xs font-mono text-amber-300 font-bold"
                   />
                 </div>
               ))}
@@ -431,13 +444,33 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             {loading ? "Simulazione in corso..." : "ESEGUI BACKTEST SCALA"}
           </button>
 
+          {existingBot ? (
+            <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-[10px] font-mono text-emerald-200 leading-snug space-y-1">
+              <div>✓ Bot attivo per {pair}: <strong>{existingBot.name}</strong></div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-emerald-400/80">secret</span>
+                <code className="px-1.5 py-0.5 rounded bg-[#04100b] border border-emerald-500/30 text-emerald-300 select-all">
+                  {existingBot.webhookSecret}
+                </code>
+              </div>
+              <div className="text-emerald-300/70">
+                Lo script Pine qui sotto contiene già questa secret e il ticker corretto.
+              </div>
+            </div>
+          ) : (
+            <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/50 text-[10px] font-mono text-amber-200 leading-snug">
+              Nessun bot per <strong>{pair}</strong>. Premi il pulsante arancione per crearne uno:
+              lo script Pine verrà generato con la sua secret dedicata.
+            </div>
+          )}
+
           <button
             onClick={publish}
             disabled={publishing}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-black font-extrabold text-xs flex items-center justify-center gap-2 glow-orange-sm disabled:opacity-50"
           >
             <Bot className="w-4 h-4" />
-            {publishing ? "Pubblicazione..." : "PUBBLICA BOT VAPI LADDER 3H"}
+            {publishing ? "Pubblicazione..." : `PUBBLICA BOT VAPI LADDER 3H ${pair.split("/")[0]}`}
           </button>
         </div>
 
@@ -448,7 +481,7 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             <div className="cyber-card rounded-2xl p-5 border border-emerald-500/25">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <span className="text-xs font-bold text-white uppercase font-mono flex items-center gap-1.5">
-                  <ArrowDownRight className="w-4 h-4 text-emerald-400" /> Scala acquisti · backtest sintetico (R4 · R5)
+                  <ArrowDownRight className="w-4 h-4 text-emerald-400" /> Scala acquisti (R4 · R5)
                 </span>
                 <span className="text-[10px] text-slate-500 font-mono">riempimento in ordine</span>
               </div>
@@ -507,7 +540,7 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
             <div className="cyber-card rounded-2xl p-5 border border-amber-500/25">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <span className="text-xs font-bold text-white uppercase font-mono flex items-center gap-1.5">
-                  <ArrowUpRight className="w-4 h-4 text-amber-400" /> Piano uscite · backtest sintetico (R6)
+                  <ArrowUpRight className="w-4 h-4 text-amber-400" /> Piano uscite (R6)
                 </span>
                 <span className="text-[10px] text-slate-500 font-mono">
                   {state?.buys ? `con ${state.buys} buy` : "in attesa"}
@@ -545,24 +578,22 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
 
               {sellPlan.length > 0 && (
                 <div className="mt-3 p-2 rounded-lg bg-[#06090e] border border-slate-800">
-                  <div className="text-[10px] font-mono text-slate-400 mb-1">Anteprima piano simulato per {state?.buys} buy</div>
+                  <div className="text-[10px] font-mono text-slate-400 mb-1">Personalizza piano {state?.buys} buy</div>
                   {sellPlan.map((target, index) => (
                     <div key={index} className="grid grid-cols-2 gap-1.5 mt-1">
                       <input
                         type="number"
                         step="1"
                         value={target.level}
-                        readOnly
-                        aria-label="Target di uscita fisso"
-                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-amber-300 cursor-not-allowed"
+                        onChange={(e) => updatePlan(String(state?.buys), index, "level", Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-amber-300"
                       />
                       <input
                         type="number"
                         step="5"
                         value={target.fractionPct}
-                        readOnly
-                        aria-label="Percentuale di uscita fissa"
-                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-cyan-300 cursor-not-allowed"
+                        onChange={(e) => updatePlan(String(state?.buys), index, "fractionPct", Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-cyan-300"
                       />
                     </div>
                   ))}
@@ -794,13 +825,21 @@ export default function VapiLadderTab({ onPublishBot, bots }: VapiLadderTabProps
 
       <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-[11px] text-amber-200/90">
         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-        <div className="space-y-2">
-          <p><strong className="text-white">Esecuzione:</strong> il backtest visibile in questa scheda usa prezzi sintetici dimostrativi e non è una misura di performance. Solo gli alert reali di TradingView vengono registrati nel log paper; anche quelli non inviano ordini a un exchange.</p>
-          <p><strong className="text-white">Rischio strategia:</strong> la regola concordata non prevede stop loss. Dopo l’ultimo buy il ciclo può rimanere aperto finché non arriva un target di uscita. La simulazione non rappresenta liquidazioni, slippage, funding o condizioni reali di margine; non usare i risultati sintetici come previsione o garanzia.</p>
-        </div>
+        <p className="mb-1.5">
+          <strong className="text-white">Trigger:</strong> i buy scattano intrabar appena il VAPI tocca il gradino (il
+          backtest qui sopra, per semplicità, valuta i fill sulla chiusura delle candele); i sell vengono sempre valutati
+          sul VAPI di chiusura della candela 3H. Resta valido il limite di 1 buy per candela.
+        </p>
+        <p>
+          La martingala aumenta l&apos;esposizione ad ogni gradino e la regola 1 esclude lo stop loss: il rischio è la
+          permanenza a mercato (anche lunga) con size crescente, non il singolo trade. Poiché tutte le uscite avvengono
+          solo in profitto, i cicli chiusi risultano per costruzione vincenti: il vero indicatore di rischio è il{" "}
+          <strong>peak invested</strong> (esposizione massima) e il tempo di recupero nelle fasi di distribuzione. Mantieni
+          la base size entro il 2–5% del capitale per scaglione, verifica la capienza del margine sull&apos;exchange
+          (leva 1x consigliata, leva composta inutile con questa scala) e usa il kill-switch della dashboard per chiudere
+          tutto manualmente.
+        </p>
       </div>
     </div>
   );
 }
-
-

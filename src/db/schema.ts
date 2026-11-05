@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, integer, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, integer, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 
 export const tradingBots = pgTable("trading_bots", {
   id: serial("id").primaryKey(),
@@ -69,15 +69,11 @@ export const exchangeProfiles = pgTable("exchange_profiles", {
 
 export const webhookLogs = pgTable("webhook_logs", {
   id: serial("id").primaryKey(),
-  eventId: text("event_id"),
   ticker: text("ticker").notNull(),
   action: text("action").notNull(),
   price: numeric("price"),
-  // Store only a redacted payload; never persist the webhook bearer secret.
   rawPayload: text("raw_payload"),
-  status: text("status").notNull().default("RECEIVED"),
+  status: text("status").notNull().default("EXECUTED"), // EXECUTED | REJECTED_BAD_SECRET | ERROR
   sourceIp: text("source_ip"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
-}, (table) => [uniqueIndex("webhook_logs_event_id_uidx").on(table.eventId)]);
-
-
+});

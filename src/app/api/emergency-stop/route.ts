@@ -1,20 +1,35 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { tradingBots } from "@/db/schema";
+import { tradingBots, tradeOrders } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST() {
   try {
-    await db.update(tradingBots)
-      .set({ status: "paused", lastRunAt: new Date() })
-      .where(and(eq(tradingBots.strategyKey, "vapi_ladder"), eq(tradingBots.status, "active")));
+    // 1. Pause all active bots
+    await db
+      .update(tradingBots)
+      .set({
+        status: "paused",
+        lastRunAt: new Date(),
+      })
+      .where(eq(tradingBots.status, "active"));
+
+    // 2. Mark any open orders as CLOSED / CANCELLED
+    await db
+      .update(tradeOrders)
+      .set({
+        status: "CANCELLED",
+        notes: "Emergency Kill-Switch triggered by Operator",
+      })
+      .where(eq(tradeOrders.status, "OPEN"));
+
     return NextResponse.json({
       success: true,
-      message: "I due bot paper sono stati messi in pausa. Nessun ordine o posizione exchange è stato modificato.",
+      message: "🚨 KILL-SWITCH ATTIVATO: Tutti i bot sono stati messi in pausa e le posizioni aperte sono state bloccate/chiuse.",
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Emergency pause failed:", error);
-    return NextResponse.json({ error: "Impossibile mettere in pausa i bot paper." }, { status: 500 });
+    console.error("Emergency stop failed:", error);
+    return NextResponse.json({ error: "Failed to trigger emergency stop" }, { status: 500 });
   }
 }

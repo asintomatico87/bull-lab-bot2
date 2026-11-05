@@ -1,42 +1,63 @@
-# Bull Lab VAPI Ladder 3H · BTC + ETH
+# Bull Lab Trading System
 
-Cruscotto Next.js con due istanze della stessa strategia: BTC/USDT ed ETH/USDT. Entrambe usano VAPI LazyBear 3H, ladder 1x / 1,5x / 2,5x, acquisti intrabar e vendite a chiusura candela.
+Cruscotto di trading automatizzato per Bitcoin ed Ethereum, con tema Bull Lab
+(Powered by AltcoinItalia · by Asintomatico).
 
-## Stato attuale: PAPER ONLY
+- **Strategia core:** VAPI Ladder 3H di LazyBear (martingala 1x / 1,5x / 2,5x a −25 / −32 / −40)
+- **Trigger ibrido:** buy intrabar appena tocca il livello, sell solo alla chiusura della candela 3H
+- **Ponte TradingView:** webhook con secret per bot, validazione server-side dei livelli
+- **Modalità senza TradingView:** Auto-Pilot 3H che legge le candele dall'exchange
+- **Exchange:** Hyperliquid DEX (No-KYC), OurBit, Bitbase, Bybit
 
-- Gli alert TradingView vengono validati, deduplicati e simulati nel database.
-- Le simulazioni mostrano prezzi, quantità e PnL paper; **nessun ordine viene inviato a Hyperliquid o a un altro exchange**.
-- La scheda backtest usa OHLCV sintetici dimostrativi, non dati storici: le sue statistiche non sono una stima di performance.
-- L’Auto-Pilot senza TradingView, gli ordini manuali e il collegamento exchange sono disabilitati.
-- L’assenza dello stop loss resta una regola della strategia scelta dall’utente.
+## Avvio in locale
 
-## Sviluppo locale
+Il modo più rapido (dalla radice del progetto):
 
 ```bash
-npm ci
-cp .env.example .env        # inserisci il DATABASE_URL nel file locale, mai nel repository
-npx drizzle-kit push        # applica anche event_id univoco ai log webhook
-node src/db/run-seed.js     # crea soltanto i bot paper BTC ed ETH mancanti
-npm run dev
+bash setup.sh
 ```
 
-Non condividere `.env`, password o chiavi. In produzione imposta almeno `DATABASE_URL`, `DASHBOARD_USER`, `DASHBOARD_PASSWORD` e `NEXT_PUBLIC_APP_URL` nelle variabili d’ambiente del provider. Se in produzione manca la Basic Auth, la dashboard chiude l’accesso.
+Fa tutto: controlla Node, installa le dipendenze, crea `.env`, crea le tabelle,
+carica i dati iniziali e avvia il cruscotto su http://localhost:3000.
 
-## Alert TradingView
+In alternativa, a mano:
 
-Segui `TRADINGVIEW-ALERTS.md`. Crea un alert separato per asset: chart 3H, script generato per il bot corretto, condizione **Any alert() function call**, webhook URL HTTPS pubblico e campo Message vuoto. Il Pine gestisce la frequenza buy/sell.
+```bash
+npm install
+cp .env.example .env.local     # inserisci la tua DATABASE_URL
+npx drizzle-kit push           # crea le tabelle
+node src/db/run-seed.js        # dati iniziali
+npm run dev                    # http://localhost:3000
+```
 
-## Endpoint
+## Messo online
 
-| Endpoint | Scopo |
+Guida completa passo-passo in [DEPLOYMENT.md](./DEPLOYMENT.md):
+GitHub → Neon/Supabase → Vercel → sottodominio one.com → TradingView.
+
+Script pronti, senza token da digitare:
+
+```bash
+bash scripts/publish-github.sh   # crea il repo privato e carica il codice (login dal browser)
+bash scripts/deploy-vercel.sh    # in alternativa: pubblica su Vercel senza GitHub
+```
+
+Nel cruscotto, scheda **Vai Live (Facile)**, la stessa procedura è interattiva
+e mostra lo stato di prontezza su `/api/config-status`.
+
+## Endpoint principali
+
+| Rotta | Uso |
 |---|---|
-| `POST /api/webhook/tradingview` | valida gli alert VAPI Ladder e registra fill paper deduplicati |
-| `GET /api/bots`, `POST/PATCH /api/bots` | legge, crea/aggiorna e mette in pausa le due istanze BTC/ETH |
-| `GET /api/orders` | log delle sole simulazioni TradingView |
-| `POST /api/emergency-stop` | mette in pausa i bot paper |
-| `POST /api/autopilot` | disabilitato intenzionalmente |
-| `POST /api/exchanges` | disabilitato finché non verrà scritto un connettore reale |
+| `POST /api/webhook/tradingview` | webhook alert TradingView (secret del bot) |
+| `POST /api/autopilot` | esecuzione autonoma 3H senza TradingView |
+| `GET/POST /api/vapi-ladder` | stato e backtest della scala |
+| `POST /api/emergency-stop` | kill-switch: mette in pausa tutti i bot |
+| `GET /api/config-status` | checklist di produzione |
+| `GET /api/health` | healthcheck |
 
-## Sicurezza operativa
+## Avvertenza
 
-Il webhook è pubblico per consentire a TradingView di chiamarlo, ma richiede la secret del bot. Il GET del webhook non restituisce i log. I payload persistiti hanno la secret oscurata e gli alert con lo stesso `eventId` non vengono simulati due volte. Le API del cruscotto sono protette dalla Basic Auth in produzione.
+La martingala aumenta l'esposizione e la strategia non prevede stop loss.
+Usa size ridotte, prova in paper trading e verifica i livelli sul feed
+dell'exchange che usi per l'esecuzione.

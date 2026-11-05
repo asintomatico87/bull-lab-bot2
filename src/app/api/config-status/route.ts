@@ -53,17 +53,8 @@ export function GET(request: Request) {
         ok: !isLocalhost,
         hint: "TradingView può chiamare solo indirizzi pubblici HTTPS.",
       },
-      {
-        id: "exchange-connector",
-        label: "Connettore exchange live",
-        ok: false,
-        hint: "Disabilitato intenzionalmente: questa versione registra solo simulazioni paper e non invia ordini reali.",
-      },
     ],
-    exchangeConnector: false,
-    paperTradingReady: hasDatabase && hasDashboardAuth,
-    readyForLiveTrading: false,
+    readyForLiveTrading:
+      hasDatabase && !isPreviewHost && hasFixedBaseUrl && hasDashboardAuth && !isLocalhost,
   });
 }
-
-
