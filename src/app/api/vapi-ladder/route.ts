@@ -101,6 +101,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
+      dataSource: "SYNTHETIC_DEMO_NOT_HISTORICAL",
+      dataWarning: "Serie OHLCV sintetica per test UI: non usare statistiche o segnali correnti come dati di mercato reali.",
       indicator: {
         name: "Volume Accumulation Percentage Indicator [LazyBear]",
         shortName: "VAPI_LB",
@@ -140,9 +142,17 @@ export async function POST(request: Request) {
     const config = normalizeLadderConfig(body ?? {});
     const result = runVapiLadder(pair, config, bars);
 
-    return NextResponse.json({ success: true, strategy: "VAPI_LADDER_3H", ...result });
+    return NextResponse.json({
+      success: true,
+      strategy: "VAPI_LADDER_3H",
+      dataSource: "SYNTHETIC_DEMO_NOT_HISTORICAL",
+      dataWarning: "Serie OHLCV sintetica: il backtest non rappresenta prezzi/volumi storici reali.",
+      ...result,
+    });
   } catch (error) {
     console.error("VAPI ladder POST error:", error);
     return NextResponse.json({ error: "Backtest scala VAPI fallito", details: String(error) }, { status: 500 });
   }
 }
+
+
