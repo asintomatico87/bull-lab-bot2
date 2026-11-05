@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isDatabaseConfigured } from "@/db";
 
 /**
  * Production readiness check for the Bull Lab dashboard.
@@ -14,7 +15,7 @@ export function GET(request: Request) {
   const isLocalhost = host.includes("localhost") || host.startsWith("127.0.0.1");
   const isPreviewHost = host.endsWith(".e2b.app") || host.endsWith(".vercel.app") || isLocalhost;
   const hasDashboardAuth = Boolean(process.env.DASHBOARD_USER && process.env.DASHBOARD_PASSWORD);
-  const hasDatabase = Boolean(process.env.DATABASE_URL);
+  const hasDatabase = isDatabaseConfigured;
   const hasFixedBaseUrl = Boolean(configuredBase);
 
   return NextResponse.json({
