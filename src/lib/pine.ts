@@ -43,8 +43,9 @@ va = tv != 0 ? 100 * tva / tv : 0.0
 // ------------------------------ WEBHOOK -------------------------------------
 json(ev) => '{"secret":"' + secret + '","ticker":"' + ticker + '","event":"' + ev + '","vapi":' + str.tostring(va, "#.####") + ',"price":' + str.tostring(close) + ',"bar_time":"' + str.tostring(time) + '"}'
 
-// R2 + R4: 1 touch per candela; quando VAPI <= rung1 il server decide lo scalino
-var bool touched = false
+// R2 + R4: 1 touch per candela; varip persiste tra i tick intrabar.
+// Quando VAPI <= rung1 il server decide lo scalino in base alla posizione aperta.
+varip bool touched = false
 if barstate.isnew
     touched := false
 if barstate.isrealtime and sendAlert and not touched and va <= b1

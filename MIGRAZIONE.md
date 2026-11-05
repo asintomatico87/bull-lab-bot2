@@ -1,54 +1,25 @@
-# Migrazione Bull Lab v1 → v2 (GitHub + Vercel)
+# Bull Lab v2 — ripartiamo semplice
 
-Sostituisci il vecchio progetto **bull-lab-bot2** con questo, mantendo repo, Vercel e sottodominio.
+## 1. Pubblica il codice con GitHub Desktop
+1. Scarica `bull-lab-v2.zip` e decomprimilo.
+2. Apri la cartella locale del repository `bull-lab-bot2` in Finder (GitHub Desktop → Repository → Show in Finder).
+3. Copia **il contenuto** della cartella `bull-lab-v2` nella cartella del repository, sostituendo i file esistenti. Se nella cartella del repository restano file vecchi non presenti nello zip, eliminali (ma **non** eliminare la cartella nascosta `.git`).
+4. In GitHub Desktop: scrivi un messaggio, premi **Commit to main** e poi **Push origin**. Non occorrono username/password nel Terminale.
+5. In Vercel → Deployments: attendi il nuovo deploy **Ready** e controlla che corrisponda all'ultimo commit.
 
-## 1. Scarica il nuovo progetto
-Dal cruscotto, pulsante **"Scarica progetto v2 (.zip)"** (o `https://bot.bulllab.one/setup/bull-lab-new.zip`).
-Scomprimilo: ottieni la cartella `bull-lab-new`.
+## 2. Vercel
+Settings → Environment Variables:
+- `DATABASE_URL`: indirizzo di connessione Neon. L'avviso “Needs Attention” indica solo che è un segreto visibile ai membri del progetto; non è un errore di connessione.
+- `WEBHOOK_SECRET`: crea una stringa lunga e uguale a quella che imposterai nelle proprietà dello script Pine.
+- `DASHBOARD_PASSWORD`: password per proteggere la dashboard, consigliata; `DASHBOARD_USER` è il nome utente (se assente: `admin`). La vecchia password della dashboard va bene.
+- `BASE_USD`: opzionale, default `500`.
 
-## 2. Sostituisci i file nel repo (da terminale)
+Dopo le modifiche alle variabili, fai un **nuovo deploy**. Non pubblicare mai il valore di `DATABASE_URL` o del secret nelle schermate.
 
-**Mac / Linux** (dentro la tua clonazione di bull-lab-bot2):
-```bash
-cd bull-lab-bot2
-find . -maxdepth 1 ! -name ".git" ! -name "." -exec rm -rf {} +   # svuota ma mantiene .git
-cp -R ~/Downloads/bull-lab-new/. .                               # copia il nuovo progetto
-git add -A
-git commit -m "Bull Lab v2 — VAPI Ladder server"
-git push
-```
-
-**Windows (PowerShell)**:
-```powershell
-cd bull-lab-bot2
-Get-ChildItem -Force | Where-Object Name -ne ".git" | Remove-Item -Recurse -Force
-Copy-Item "$env:USERPROFILE\Downloads\bull-lab-new\*" . -Recurse -Force
-git add -A
-git commit -m "Bull Lab v2 — VAPI Ladder server"
-git push
-```
-
-> Se non hai una clonazione locale: crea un repo GitHub vuoto o cancella quello vecchio, poi dentro la cartella `bull-lab-new` esegui:
-> `git init && git add -A && git commit -m "Bull Lab v2" && git remote add origin git@github.com:TUO-USER/bull-lab-bot2.git && git push -f origin main`
-
-## 3. Vercel (1 minuto)
-- Il deploy parte **automaticamente** allo stesso sottodominio `bot.bulllab.one`.
-- Settings → Environment Variables: assicurati che esistano
-  - `DATABASE_URL` (quella Neon, già presente)
-  - `WEBHOOK_SECRET` (nuovo, es. `BL_QYYNXKA` — deve essere identico a quello dello script Pine)
-  - opzionali: `BASE_USD=500`, `FEE_BPS=3.5`
-- Le tabelle su Neon vengono **create automaticamente** alla prima richiesta: non serve nessun comando.
+## 3. Neon
+Non fare nulla: la nuova app crea le sue tre tabelle (`cycles`, `trades`, `webhook_logs`) automaticamente alla prima visita. Le tabelle `bot_settings` e `symbol_config` erano del vecchio progetto e non sono usate da questa versione.
 
 ## 4. TradingView
-1. Sostituisci il vecchio script con lo **script Pine v5** (nel cruscotto, sezione Setup).
-2. Imposta `Ticker` = BTCUSDT / ETHUSDT e lo stesso `Webhook secret` di Vercel.
-3. **Ricrea** gli alert (TV li associa alla versione dello script):
-   - Condizione: `BL_VAPI_LADDER` → **Any alert() function call**
-   - Messaggio: **vuoto** (lo genera lo script)
-   - Webhook URL: `https://bot.bulllab.one/api/webhook`
-   - Scadenza: open-ended
-4. Richiedi un alert di prova o usa il pannello **Test Webhook** del cruscotto.
+Apri la dashboard → sezione **PASSO 2: Script Pine v5** → pulsante **Copia tutto lo script**. Incolla in Pine Editor. Imposta il grafico a 3H e il secret uguale a Vercel. Crea **un alert per BTC** e **un alert per ETH**, condizione “Any alert() function call”, Webhook URL `https://bot.bulllab.one/api/webhook`. Non sostituire il messaggio prodotto da `alert()`.
 
-## 5. Verifica
-Apri `https://bot.bulllab.one`: nel **Log Webhook** deve comparire la richiesta con esito.
-Se compare `accepted/executed` → il bot paper è operativo.
+Il bot è PAPER: non manda ordini a Hyperliquid. Premi **Invia test** nella dashboard per provare server e database prima di impostare TradingView.

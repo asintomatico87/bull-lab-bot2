@@ -74,36 +74,33 @@ export async function processSignal(s: Signal): Promise<{ status: string; reason
 
   // ---- SELL: solo a chiusura candela (barstate.isconfirmed) ----
   if (!c) return { status: "ignored", reason: "Chiusura candela: nessun ciclo aperto" };
+  // Come nel Pine originale: UNA sola tappa di vendita per chiusura di candela,
+  // anche se VAPI supera più target nello stesso istante.
+  const [alreadySold] = await db.select({ id: trades.id }).from(trades)
+    .where(and(eq(trades.cycleId, c.id), eq(trades.side, "SELL"), eq(trades.barTime, s.bar_time))).limit(1);
+  if (alreadySold) return { status: "ignored", reason: "SELL già eseguito su questa candela 3H" };
   const v = s.vapi;
-  const steps: { frac: number; note: string; stage: number }[] = [];
-  let stage = c.exitStage;
+  let step: { frac: number; note: string; stage: number } | null = null;
   if (c.entries === 1) {
-    if (v >= 12) steps.push({ frac: 1, note: "R6 · 1 BUY: VAPI≥12 chiude 100%", stage: 9 });
+    if (v >= 12) step = { frac: 1, note: "R6 · 1 BUY: VAPI≥12 chiude 100%", stage: 9 };
   } else if (c.entries === 2) {
-    if (v >= 15) steps.push({ frac: 1, note: "R6 · 2 BUY: VAPI≥15 chiude il resto", stage: 9 });
-    else if (stage === 0 && v >= 5) steps.push({ frac: 0.5, note: "R6 · 2 BUY: VAPI≥5 vende 50%", stage: 1 });
+    if (c.exitStage === 0 && v >= 5) step = { frac: 0.5, note: "R6 · 2 BUY: VAPI≥5 vende 50%", stage: 1 };
+    else if (c.exitStage === 1 && v >= 15) step = { frac: 1, note: "R6 · 2 BUY: VAPI≥15 chiude il resto", stage: 9 };
   } else if (c.entries === 3) {
-    if (v >= 22) steps.push({ frac: 1, note: "R6 · 3 BUY: VAPI≥22 chiude tutto", stage: 9 });
-    else {
-      if (stage === 0 && v >= 0) steps.push({ frac: 0.5, note: "R6 · 3 BUY: VAPI≥0 vende 50%", stage: 1 });
-      if (stage === 1 && v >= 15) steps.push({ frac: 0.5, note: "R6 · 3 BUY: VAPI≥15 vende metà del rimanente", stage: 2 });
-    }
+    if (c.exitStage === 0 && v >= 0) step = { frac: 0.5, note: "R6 · 3 BUY: VAPI≥0 vende 50%", stage: 1 };
+    else if (c.exitStage === 1 && v >= 15) step = { frac: 0.5, note: "R6 · 3 BUY: VAPI≥15 vende metà del rimanente", stage: 2 };
+    else if (c.exitStage === 2 && v >= 22) step = { frac: 1, note: "R6 · 3 BUY: VAPI≥22 chiude tutto", stage: 9 };
   }
-  if (!steps.length) return { status: "ignored", reason: `Chiusura: VAPI ${v.toFixed(2)}, nessuna uscita (BUY=${c.entries}, stage=${c.exitStage})` };
+  if (!step) return { status: "ignored", reason: `Chiusura: VAPI ${v.toFixed(2)}, nessuna uscita (BUY=${c.entries}, stage=${c.exitStage})` };
 
-  let qty = c.qty, cost = c.cost, pnl = c.realizedPnl;
-  const notes: string[] = [];
-  let finalStage = c.exitStage;
-  for (const st of steps) {
-    const sq = qty * st.frac;
-    const sc = cost * st.frac;
-    const proceeds = sq * s.price * (1 - FEE);
-    pnl += proceeds - sc;
-    qty -= sq; cost -= sc; finalStage = st.stage;
-    await db.insert(trades).values({ cycleId: c.id, symbol, side: "SELL", level: st.stage, price: s.price, qty: sq, vapi: v, barTime: s.bar_time, note: st.note, pnl: proceeds - sc });
-    notes.push(st.note);
-  }
-  const closed = finalStage === 9 || qty < 1e-12;
-  await db.update(cycles).set({ qty: closed ? 0 : qty, cost: closed ? 0 : cost, realizedPnl: pnl, exitStage: finalStage, status: closed ? "closed" : "open", closedAt: closed ? new Date() : null }).where(eq(cycles.id, c.id));
-  return { status: "executed", reason: `PAPER SELL ${symbol}: ${notes.join(" + ")}` };
+  const soldQty = c.qty * step.frac;
+  const soldCost = c.cost * step.frac;
+  const proceeds = soldQty * s.price * (1 - FEE);
+  const qty = c.qty - soldQty;
+  const cost = c.cost - soldCost;
+  const pnl = c.realizedPnl + proceeds - soldCost;
+  await db.insert(trades).values({ cycleId: c.id, symbol, side: "SELL", level: step.stage, price: s.price, qty: soldQty, vapi: v, barTime: s.bar_time, note: step.note, pnl: proceeds - soldCost });
+  const closed = step.stage === 9 || qty < 1e-12;
+  await db.update(cycles).set({ qty: closed ? 0 : qty, cost: closed ? 0 : cost, realizedPnl: pnl, exitStage: step.stage, status: closed ? "closed" : "open", closedAt: closed ? new Date() : null }).where(eq(cycles.id, c.id));
+  return { status: "executed", reason: `PAPER SELL ${symbol}: ${step.note}` };
 }
