@@ -2,6 +2,17 @@ import { ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import { formatPrice, formatSize } from "@nktkas/hyperliquid/utils";
 import { privateKeyToAccount } from "viem/accounts";
 
+function explainHl(msg: string) {
+  const m = msg.toLowerCase();
+  if (m.includes("insufficient") || m.includes("margin") || m.includes("not enough") || m.includes("undercollateral")) {
+    return "Fondi o margine insufficienti su Hyperliquid. Questo ordine NON è stato eseguito. I BUY già aperti restano, questo scalino no.";
+  }
+  if (m.includes("reduce") && m.includes("only")) {
+    return "Hyperliquid ha rifiutato la vendita reduce-only (niente posizione da chiudere sul conto).";
+  }
+  return msg;
+}
+
 function env() {
   const pk = (process.env.HL_AGENT_PRIVATE_KEY || "").trim();
   const address = (process.env.HL_ACCOUNT_ADDRESS || "").trim() as `0x${string}` | "";
@@ -58,13 +69,18 @@ export async function placeMarket(opts: { symbol: "BTC" | "ETH"; isBuy: boolean;
   const p = formatPrice(String(rawPx), szDecimals);
   const s = formatSize(String(opts.qty), szDecimals);
   if (Number(s) <= 0) throw new Error("Quantità arrotondata a zero: aumenta la size");
-  const result = await exchange.order({
-    orders: [{ a: asset, b: opts.isBuy, p, s, r: opts.reduceOnly, t: { limit: { tif: "Ioc" } } }],
-    grouping: "na",
-  });
+  let result;
+  try {
+    result = await exchange.order({
+      orders: [{ a: asset, b: opts.isBuy, p, s, r: opts.reduceOnly, t: { limit: { tif: "Ioc" } } }],
+      grouping: "na",
+    });
+  } catch (e) {
+    throw new Error(explainHl(e instanceof Error ? e.message : String(e)));
+  }
   if (result.status !== "ok") throw new Error("Hyperliquid ha rifiutato l'ordine");
   const st = result.response.data.statuses[0] as Record<string, unknown>;
-  if (typeof st.error === "string") throw new Error(st.error);
+  if (typeof st.error === "string") throw new Error(explainHl(st.error));
   const filled = st.filled as { totalSz?: string; avgPx?: string; oid?: number } | undefined;
   if (filled?.totalSz && filled?.avgPx) {
     return { qty: Number(filled.totalSz), price: Number(filled.avgPx), oid: filled.oid };

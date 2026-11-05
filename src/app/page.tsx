@@ -115,7 +115,7 @@ export default async function Home() {
 
       <div className="relative mx-auto max-w-[1280px] px-4 md:px-8 py-6 md:py-8 space-y-6">
         <header className="glass rounded-[28px] px-5 md:px-7 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <img src="/images/logo.jpg" alt="Bull Lab" className="h-14 md:h-[72px] w-auto object-contain mix-blend-screen drop-shadow-[0_0_24px_rgba(255,122,24,.25)]" />
+          <img src="/images/logo.jpg" alt="Bull Lab — Powered by AltcoinItalia" className="h-16 md:h-20 w-auto max-w-[58%] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,.65)]" />
           <div className="flex items-center gap-5">
             <div className="hidden sm:block text-right">
               <p className="kicker">Command center</p>
@@ -125,12 +125,12 @@ export default async function Home() {
               <span className="live-dot" />
               <span className="text-xs font-extrabold tracking-widest text-cyan-200">{runtime.mode === "live" && !runtime.killSwitch ? "LIVE HYPERLIQUID" : live ? "PAPER LIVE" : "PAPER READY"}</span>
             </div>
-            <img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-orange-400/70 shadow-[0_0_24px_rgba(255,122,24,.45)]" />
+            <img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-cyan-300/80 shadow-[0_0_24px_rgba(34,211,238,.45)]" />
           </div>
         </header>
 
         <div className="ticker">
-            <span>BULL LAB · POWERED BY ALTCOINITALIA · BTC &nbsp;+&nbsp; ETH · TIMEFRAME 3H · PERIODO 10 · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL SOLO A CHIUSURA · SIZE MODIFICABILE DAL CRUSCOTTO · FEE 0,035% · SOLO PAPER &nbsp;&nbsp;&nbsp; BULL LAB · POWERED BY ALTCOINITALIA · BTC &nbsp;+&nbsp; ETH · TIMEFRAME 3H · PERIODO 10 · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL SOLO A CHIUSURA · SIZE MODIFICABILE DAL CRUSCOTTO · FEE 0,035% · SOLO PAPER &nbsp;&nbsp;&nbsp;</span>
+            <span>BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp; BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp;</span>
         </div>
 
         <section className="grid lg:grid-cols-[1fr_280px] gap-4">

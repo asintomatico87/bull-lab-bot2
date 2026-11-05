@@ -81,7 +81,7 @@ export function SizeControl({ symbol, value }: { symbol: "BTC" | "ETH"; value: n
         </label>
         <button className="button-primary" disabled={busy || !ok} onClick={save}>{busy ? "Salvo…" : "Salva size"}</button>
       </div>
-      <p className="text-xs text-slate-400 mt-2">Scala: {ok ? `${n} / ${n * 1.5} / ${n * 2.5}` : "—"} USDT · non modifica i BUY già aperti</p>
+      <p className="text-xs text-slate-400 mt-2">Scala: {ok ? `${n} / ${n * 1.5} / ${n * 2.5}` : "—"} USDT · vale dai prossimi BUY, anche in LIVE su Hyperliquid. Non cambia gli scalini già aperti.</p>
       {msg && <p className="text-sm text-cyan-200 mt-1">{msg}</p>}
     </div>
   );
