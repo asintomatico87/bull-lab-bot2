@@ -49,6 +49,8 @@ export function ensureSchema(): Promise<void> {
     )`);
     await db.execute(sql`INSERT INTO app_settings (id, btc_usd, eth_usd)
       VALUES (1, 500, 500) ON CONFLICT (id) DO NOTHING`);
+    await db.execute(sql`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'paper'`);
+    await db.execute(sql`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kill_switch BOOLEAN NOT NULL DEFAULT false`);
   })();
   return pending;
 }

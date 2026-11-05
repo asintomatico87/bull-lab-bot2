@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import { cycles, trades } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { getSizes } from "@/lib/settings";
+import { getRuntime, getSizes } from "@/lib/settings";
+import { placeMarket } from "@/lib/hyperliquid";
 
 // ============================================================
 // BULL LAB — VAPI LADDER 3H (Martingale ladder on LazyBear VAPI)
@@ -41,9 +42,19 @@ async function getOpenCycle(symbol: string) {
   return c;
 }
 
-export async function processSignal(s: Signal): Promise<{ status: string; reason: string }> {
+async function gateLive(forcePaper?: boolean) {
+  if (forcePaper) return { live: false as const };
+  const r = await getRuntime();
+  if (r.mode !== "live") return { live: false as const };
+  if (r.killSwitch) return { live: false as const, block: "Kill switch attivo: nessun ordine inviato" };
+  if (!r.hlReady) return { live: false as const, block: "LIVE ma mancano HL_AGENT_PRIVATE_KEY e HL_ACCOUNT_ADDRESS su Vercel" };
+  return { live: true as const };
+}
+
+export async function processSignal(s: Signal, opts?: { forcePaper?: boolean }): Promise<{ status: string; reason: string }> {
   const symbol = normalizeSymbol(s.symbol);
   if (!SYMBOLS.includes(symbol)) return { status: "ignored", reason: `Ticker non gestito: ${s.symbol}` };
+  const coin = symbol === "ETH" ? "ETH" : "BTC";
   if (!Number.isFinite(s.vapi) || !Number.isFinite(s.price) || s.price <= 0)
     return { status: "rejected", reason: "vapi/price non numerici: controlla i placeholder nel messaggio alert" };
 
@@ -59,9 +70,22 @@ export async function processSignal(s: Signal): Promise<{ status: string; reason
     if (c && Object.values(c.lastBuyBars).includes(s.bar_time)) return { status: "ignored", reason: "R2: già 1 BUY su questa candela 3H" };
 
     const sizes = await getSizes();
-    const usd = (symbol === "ETH" ? sizes.ETH : sizes.BTC) * SIZES[entries];
-    const qty = usd / s.price;
-    const cost = usd * (1 + FEE);
+    const usd = (coin === "ETH" ? sizes.ETH : sizes.BTC) * SIZES[entries];
+    let qty = usd / s.price;
+    let px = s.price;
+    const gate = await gateLive(opts?.forcePaper);
+    if (gate.block) return { status: "error", reason: gate.block };
+    const live = gate.live;
+    if (live) {
+      try {
+        const fill = await placeMarket({ symbol: coin, isBuy: true, qty, reduceOnly: false });
+        qty = fill.qty;
+        px = fill.price;
+      } catch (e) {
+        return { status: "error", reason: `Hyperliquid BUY fallito: ${e instanceof Error ? e.message : String(e)}` };
+      }
+    }
+    const cost = qty * px * (1 + FEE);
     let cycleId: number;
     if (!c) {
       const [n] = await db.insert(cycles).values({ symbol, entries: 1, qty, cost, lastBuyBars: { [key]: s.bar_time } }).returning();
@@ -70,8 +94,9 @@ export async function processSignal(s: Signal): Promise<{ status: string; reason
       await db.update(cycles).set({ entries: entries + 1, qty: c.qty + qty, cost: c.cost + cost, lastBuyBars: { ...c.lastBuyBars, [key]: s.bar_time } }).where(eq(cycles.id, c.id));
       cycleId = c.id;
     }
-    await db.insert(trades).values({ cycleId, symbol, side: "BUY", level: entries + 1, price: s.price, qty, vapi: s.vapi, barTime: s.bar_time, note: `BUY rung ${key} @VAPI≤${level} · ${usd} USDT (${SIZES[entries]}×)` });
-    return { status: "executed", reason: `PAPER BUY rung ${key} ${symbol} ${qty.toFixed(6)} @ ${s.price}` };
+    const tag = live ? "LIVE" : "PAPER";
+    await db.insert(trades).values({ cycleId, symbol, side: "BUY", level: entries + 1, price: px, qty, vapi: s.vapi, barTime: s.bar_time, note: `${tag} BUY rung ${key} @VAPI≤${level} · ${usd} USDT (${SIZES[entries]}×)` });
+    return { status: "executed", reason: `${tag} BUY rung ${key} ${symbol} ${qty.toFixed(6)} @ ${px}` };
   }
 
   // ---- SELL: solo a chiusura candela (barstate.isconfirmed) ----
@@ -95,14 +120,28 @@ export async function processSignal(s: Signal): Promise<{ status: string; reason
   }
   if (!step) return { status: "ignored", reason: `Chiusura: VAPI ${v.toFixed(2)}, nessuna uscita (BUY=${c.entries}, stage=${c.exitStage})` };
 
-  const soldQty = c.qty * step.frac;
-  const soldCost = c.cost * step.frac;
-  const proceeds = soldQty * s.price * (1 - FEE);
+  let soldQty = c.qty * step.frac;
+  let px = s.price;
+  const gate = await gateLive(opts?.forcePaper);
+  if (gate.block) return { status: "error", reason: gate.block };
+  const live = gate.live;
+  if (live) {
+    try {
+      const fill = await placeMarket({ symbol: coin, isBuy: false, qty: soldQty, reduceOnly: true });
+      soldQty = fill.qty;
+      px = fill.price;
+    } catch (e) {
+      return { status: "error", reason: `Hyperliquid SELL fallito: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
+  const soldCost = c.cost * (soldQty / c.qty);
+  const proceeds = soldQty * px * (1 - FEE);
   const qty = c.qty - soldQty;
   const cost = c.cost - soldCost;
   const pnl = c.realizedPnl + proceeds - soldCost;
-  await db.insert(trades).values({ cycleId: c.id, symbol, side: "SELL", level: step.stage, price: s.price, qty: soldQty, vapi: v, barTime: s.bar_time, note: step.note, pnl: proceeds - soldCost });
+  const tag = live ? "LIVE" : "PAPER";
+  await db.insert(trades).values({ cycleId: c.id, symbol, side: "SELL", level: step.stage, price: px, qty: soldQty, vapi: v, barTime: s.bar_time, note: `${tag} ${step.note}`, pnl: proceeds - soldCost });
   const closed = step.stage === 9 || qty < 1e-12;
   await db.update(cycles).set({ qty: closed ? 0 : qty, cost: closed ? 0 : cost, realizedPnl: pnl, exitStage: step.stage, status: closed ? "closed" : "open", closedAt: closed ? new Date() : null }).where(eq(cycles.id, c.id));
-  return { status: "executed", reason: `PAPER SELL ${symbol}: ${step.note}` };
+  return { status: "executed", reason: `${tag} SELL ${symbol}: ${step.note}` };
 }

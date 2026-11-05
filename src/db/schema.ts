@@ -1,9 +1,11 @@
-import { pgTable, serial, text, integer, doublePrecision, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, doublePrecision, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 
 export const appSettings = pgTable("app_settings", {
   id: integer("id").primaryKey(),
   btcUsd: doublePrecision("btc_usd").notNull().default(500),
   ethUsd: doublePrecision("eth_usd").notNull().default(500),
+  mode: text("mode").notNull().default("paper"),
+  killSwitch: boolean("kill_switch").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

@@ -12,6 +12,45 @@ export function WebhookUrl() {
   </div>;
 }
 
+export function ModePanel({ mode, kill, ready, testnet }: { mode: "paper" | "live"; kill: boolean; ready: boolean; testnet: boolean }) {
+  const router = useRouter();
+  const [confirm, setConfirm] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function post(body: Record<string, unknown>) {
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (!j.ok) setMsg(j.error || "Operazione non riuscita");
+      else router.refresh();
+    } catch { setMsg("Operazione non riuscita"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="glass rounded-3xl p-5 space-y-3">
+      <p className="kicker">Esecuzione</p>
+      <p className={`h1 text-2xl ${mode === "live" && !kill ? "text-rose-300" : "text-orange-300"}`}>{kill ? "BLOCCATO" : mode === "live" ? "LIVE" : "PAPER"}</p>
+      <p className="text-sm text-slate-300 leading-relaxed">
+        {ready ? (testnet ? "Chiavi Hyperliquid presenti · TESTNET" : "Chiavi Hyperliquid presenti · MAINNET") : "Chiavi Hyperliquid assenti: resta in PAPER."}
+        {" "}Il test della dashboard è sempre simulato.
+      </p>
+      {mode === "paper" ? (
+        <div className="space-y-2">
+          <input className="input-field w-full" placeholder='Scrivi LIVE per confermare' value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <button className="button-danger w-full" disabled={busy || !ready} onClick={() => post({ action: "mode", mode: "live", confirm })}>Passa a soldi veri</button>
+        </div>
+      ) : (
+        <button className="button-secondary w-full" disabled={busy} onClick={() => post({ action: "mode", mode: "paper" })}>Torna a PAPER</button>
+      )}
+      <button className={kill ? "button-primary w-full" : "button-danger w-full"} disabled={busy} onClick={() => post({ action: "kill", kill: !kill })}>
+        {kill ? "Disattiva kill switch" : "Kill switch · ferma gli ordini"}
+      </button>
+      {msg && <p className="text-sm text-rose-200">{msg}</p>}
+    </div>
+  );
+}
+
 export function SizeControl({ symbol, value }: { symbol: "BTC" | "ETH"; value: number }) {
   const router = useRouter();
   const [usd, setUsd] = useState(String(value));
@@ -67,7 +106,7 @@ export function TestPanel({ secret }: { secret: string }) {
   async function send() {
     setBusy(true);
     try {
-      const r = await fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ secret, ticker: symbol, event, vapi: Number(vapi), price: Number(price), bar_time: bar }) });
+      const r = await fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ secret, ticker: symbol, event, vapi: Number(vapi), price: Number(price), bar_time: bar, paper: true }) });
       setRes(await r.json());
       router.refresh();
     } catch {

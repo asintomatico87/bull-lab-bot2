@@ -37,11 +37,11 @@ export async function POST(req: Request) {
     price: Number(body.price),
     bar_time: String(body.bar_time || ""),
   };
-  try {
-    const r = processSignal(sig);
-    const out = await r;
+    try {
+    const forcePaper = body.paper === true;
+    const out = await processSignal(sig, { forcePaper });
     await log(raw, out.status, out.reason);
-    return NextResponse.json({ ok: true, ...out });
+    return NextResponse.json({ ok: out.status !== "error", ...out }, { status: out.status === "error" ? 200 : 200 });
   } catch (e) {
     await log(raw, "error", String(e));
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });

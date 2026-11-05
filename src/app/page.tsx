@@ -2,9 +2,10 @@ import { db } from "@/db";
 import { ensureSchema } from "@/db/ensure";
 import { cycles, trades, webhookLogs } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { PineCopy, SizeControl, TestPanel, WebhookUrl } from "./actions";
+import { ModePanel, PineCopy, SizeControl, TestPanel, WebhookUrl } from "./actions";
 import { PINE } from "@/lib/pine";
-import { getSizes } from "@/lib/settings";
+import { getRuntime } from "@/lib/settings";
+import { hlOverview } from "@/lib/hyperliquid";
 import { exposure, money, nextMove, qtyFmt, rungs, utcStamp, type CycleRow, type TradeRow } from "@/lib/desk";
 
 export const dynamic = "force-dynamic";
@@ -91,7 +92,9 @@ function SystemCard({
 export default async function Home() {
   await ensureSchema();
   const secret = process.env.WEBHOOK_SECRET || "bulllab";
-  const sizes = await getSizes();
+  const runtime = await getRuntime();
+  const sizes = runtime.sizes;
+  const hl = runtime.hlAddress ? await hlOverview() : null;
   const [open, closed, logs, tr] = await Promise.all([
     db.select().from(cycles).where(eq(cycles.status, "open")),
     db.select().from(cycles).where(eq(cycles.status, "closed")),
@@ -120,7 +123,7 @@ export default async function Home() {
             </div>
             <div className="flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5">
               <span className="live-dot" />
-              <span className="text-xs font-extrabold tracking-widest text-cyan-200">{live ? "PAPER LIVE" : "PAPER READY"}</span>
+              <span className="text-xs font-extrabold tracking-widest text-cyan-200">{runtime.mode === "live" && !runtime.killSwitch ? "LIVE HYPERLIQUID" : live ? "PAPER LIVE" : "PAPER READY"}</span>
             </div>
             <img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-orange-400/70 shadow-[0_0_24px_rgba(255,122,24,.45)]" />
           </div>
@@ -148,12 +151,26 @@ export default async function Home() {
               <p className="text-slate-400 text-sm mt-2">BTC {money(sizes.BTC)} · ETH {money(sizes.ETH)} USDT</p>
             </div>
           </div>
-          <div className="glass rounded-3xl p-5 flex flex-col justify-center">
-            <p className="kicker">Modalità</p>
-            <p className="h1 text-2xl text-orange-300 mt-2">PAPER</p>
-            <p className="text-slate-300 text-sm mt-2 leading-relaxed">Nessun ordine su Hyperliquid. Quello che vedi è simulato dal webhook TradingView.</p>
-          </div>
+          <ModePanel mode={runtime.mode} kill={runtime.killSwitch} ready={runtime.hlReady} testnet={runtime.hlTestnet} />
         </section>
+
+        {hl && (
+          <section className="glass rounded-[28px] p-5 md:p-6">
+            <p className="kicker">Conto Hyperliquid {hl.testnet ? "· TESTNET" : "· MAINNET"}</p>
+            {"error" in hl && hl.error ? (
+              <p className="mt-2 text-amber-200">Indirizzo configurato ma il conto non è leggibile in questo momento.</p>
+            ) : (
+              <div className="grid sm:grid-cols-3 gap-4 mt-3">
+                <div><p className="text-xs uppercase tracking-[0.18em] text-slate-400">Equity</p><p className="metric text-2xl">{money(hl.equity)} $</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-slate-400">Prelevabile</p><p className="metric text-2xl">{money(hl.withdrawable)} $</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-slate-400">Posizioni</p>
+                  <p className="text-sm mt-1">{hl.positions.length ? hl.positions.map((p) => `${p.coin} ${p.szi} · lev ${p.lev}x`).join(" · ") : "nessuna"}</p>
+                </div>
+              </div>
+            )}
+            {hl.address && <p className="text-xs text-slate-500 mt-3 break-all">{hl.address}</p>}
+          </section>
+        )}
 
         <section className="grid lg:grid-cols-2 gap-5" aria-label="I due sistemi">
           <SystemCard symbol="BTC" theme="cyan" mark="/images/btc-mark.jpg" cycle={btc} last={lastOf("BTC")} sizeUsd={sizes.BTC} />
@@ -228,6 +245,15 @@ export default async function Home() {
               <TestPanel secret={secret} />
             </div>
             <div>
+              <p className="kicker">Hyperliquid · soldi veri</p>
+              <ol className="mt-2 space-y-2 text-slate-300 text-sm leading-relaxed list-decimal ml-5">
+                <li>Su Hyperliquid crea un <b>API wallet</b> (agent). Non usare la chiave del wallet principale.</li>
+                <li>In Vercel aggiungi <code>HL_ACCOUNT_ADDRESS</code> (indirizzo pubblico del conto con i fondi) e <code>HL_AGENT_PRIVATE_KEY</code> (chiave dell’API wallet). Opzionale: <code>HL_TESTNET=true</code> per la testnet.</li>
+                <li>Deposita USDC sul conto perps e imposta la leva di BTC ed ETH dall’interfaccia Hyperliquid.</li>
+                <li>Dopo il redeploy, in alto a destra scrivi <b>LIVE</b> e premi «Passa a soldi veri». Il kill switch ferma gli ordini senza spegnere gli alert.</li>
+              </ol>
+            </div>
+            <div>
               <p className="kicker">Deploy</p>
               <a href="/setup/bull-lab-v2.zip" download className="button-secondary inline-block mt-3">Scarica progetto aggiornato (.zip)</a>
             </div>
@@ -236,7 +262,7 @@ export default async function Home() {
 
         <footer className="pb-8 text-sm text-slate-500 flex flex-wrap justify-between gap-2">
           <span>BULL LAB · by Asintomatico · Powered by AltcoinItalia</span>
-          <span>Condizioni valutate dai segnali TradingView, non da Hyperliquid</span>
+          <span>Segnali da TradingView · esecuzione PAPER o Hyperliquid in base all’interruttore</span>
         </footer>
       </div>
     </main>
