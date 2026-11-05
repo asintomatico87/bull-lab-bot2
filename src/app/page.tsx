@@ -40,7 +40,7 @@ export default async function Home() {
 
       <section id="test" className={card}>
         <div className="step">PASSO 1</div><h2 className={title}>Prova il webhook</h2>
-        <p className="explain">Premi <b>Invia test</b> con i valori già scritti (BTC, BUY, VAPI −26). È un’operazione <b>paper</b> da 500 USDT, non un ordine reale. Se lo ripeti sulla stessa candela, “ignorato” è corretto.</p>
+        <p className="explain">I valori qui sotto sono <b>inventati per il test</b>, non letti dal grafico. Con BTC, BUY e VAPI −26 il primo scalino può comprare 500 USDT paper. Se il primo BUY esiste già, il secondo richiede VAPI ≤ −32: a −26 è corretto vedere “nessuna operazione”.</p>
         <TestPanel secret={secret} />
       </section>
 

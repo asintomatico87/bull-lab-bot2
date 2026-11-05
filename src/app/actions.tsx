@@ -39,18 +39,19 @@ export function TestPanel({ secret }: { secret: string }) {
     } finally { setBusy(false); }
   }
   async function reset() {
-    if (!confirm("Vuoi cancellare tutte le operazioni paper?")) return;
+    if (!confirm("Cancella TUTTI i cicli, le operazioni e i log PAPER, anche quelli arrivati da TradingView. Fallo solo prima di attivare gli alert. Continuare?")) return;
     const r = await fetch("/api/reset", { method: "POST" });
     if (r.ok) { setRes(null); router.refresh(); }
     else setRes({ ok: false, reason: "Reset non riuscito." });
   }
   const input = "input-field";
   return <div className="space-y-4">
+    <p className="rounded-lg border border-cyan-800/60 bg-cyan-950/20 px-4 py-3 text-sm text-cyan-100"><strong>Simulazione manuale:</strong> −26 e 60000 sono valori di esempio scritti qui. Non sono il VAPI e il prezzo attuali di TradingView. Il test aggiorna però il <strong>medesimo stato PAPER</strong> che useranno gli alert reali: prima di attivarli, puoi azzerare i dati di prova nelle opzioni avanzate.</p>
     <div className="flex flex-wrap gap-3 items-end">
       <label className="field-label">Moneta<select className={input} value={symbol} onChange={e => setSymbol(e.target.value)}><option>BTCUSDT</option><option>ETHUSDT</option></select></label>
       <label className="field-label">Segnale<select className={input} value={event} onChange={e => setEvent(e.target.value)}><option value="touch">BUY · intrabar</option><option value="close">SELL · chiusura 3H</option></select></label>
-      <label className="field-label">VAPI<input type="number" step="any" className={input + " w-28"} value={vapi} onChange={e => setVapi(e.target.value)} /></label>
-      <label className="field-label">Prezzo USDT<input type="number" step="any" className={input + " w-32"} value={price} onChange={e => setPrice(e.target.value)} /></label>
+      <label className="field-label">VAPI simulato<input type="number" step="any" className={input + " w-28"} value={vapi} onChange={e => setVapi(e.target.value)} /></label>
+      <label className="field-label">Prezzo simulato USDT<input type="number" step="any" className={input + " w-32"} value={price} onChange={e => setPrice(e.target.value)} /></label>
       <button className="button-primary" disabled={busy} onClick={send}>{busy ? "Invio…" : "Invia test"}</button>
     </div>
     <details className="text-sm text-slate-400"><summary className="cursor-pointer">Opzioni avanzate: cambiare candela / azzerare paper</summary>
