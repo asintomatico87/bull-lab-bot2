@@ -114,18 +114,20 @@ export default async function Home() {
       <div className="stage-vignette" />
 
       <div className="relative mx-auto max-w-[1280px] px-4 md:px-8 py-6 md:py-8 space-y-6">
-        <header className="glass rounded-[28px] px-5 md:px-7 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <img src="/images/logo.jpg" alt="Bull Lab — Powered by AltcoinItalia" className="h-16 md:h-20 w-auto max-w-[58%] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,.65)]" />
-          <div className="flex items-center gap-5">
-            <div className="hidden sm:block text-right">
-              <p className="kicker">Command center</p>
-              <p className="h1 text-lg text-white">VAPI LADDER 3H</p>
+        <header className="glass rounded-[28px] px-5 md:px-7 py-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4 min-w-0">
+            <img src="/images/logo.jpg?v=asi3" alt="Bull Lab" width={420} height={140} className="h-20 md:h-24 w-auto max-w-[min(520px,70vw)] object-contain rounded-xl bg-black shrink-0" />
+            <div className="min-w-0">
+              <p className="kicker">Bull Lab · by Asintomatico</p>
+              <p className="h1 text-xl md:text-2xl text-white truncate">VAPI LADDER 3H</p>
             </div>
+          </div>
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5">
               <span className="live-dot" />
               <span className="text-xs font-extrabold tracking-widest text-cyan-200">{runtime.mode === "live" && !runtime.killSwitch ? "LIVE HYPERLIQUID" : live ? "PAPER LIVE" : "PAPER READY"}</span>
             </div>
-            <img src="/images/profile.jpg" alt="Asintomatico" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover ring-2 ring-cyan-300/80 shadow-[0_0_24px_rgba(34,211,238,.45)]" />
+            <img src="/images/profile.jpg?v=asi3" alt="Asintomatico" width={72} height={72} className="w-[72px] h-[72px] rounded-full object-cover bg-slate-800 ring-2 ring-cyan-300/80 shadow-[0_0_24px_rgba(34,211,238,.45)] shrink-0" />
           </div>
         </header>
 

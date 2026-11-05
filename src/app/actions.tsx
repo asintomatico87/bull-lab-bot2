@@ -14,7 +14,7 @@ export function WebhookUrl() {
 
 export function ModePanel({ mode, kill, ready, testnet }: { mode: "paper" | "live"; kill: boolean; ready: boolean; testnet: boolean }) {
   const router = useRouter();
-  const [confirm, setConfirm] = useState("");
+  const [liveWord, setLiveWord] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   async function post(body: Record<string, unknown>) {
@@ -37,8 +37,8 @@ export function ModePanel({ mode, kill, ready, testnet }: { mode: "paper" | "liv
       </p>
       {mode === "paper" ? (
         <div className="space-y-2">
-          <input className="input-field w-full" placeholder='Scrivi LIVE per confermare' value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          <button className="button-danger w-full" disabled={busy || !ready} onClick={() => post({ action: "mode", mode: "live", confirm })}>Passa a soldi veri</button>
+          <input className="input-field w-full" placeholder='Scrivi LIVE per confermare' value={liveWord} onChange={(e) => setLiveWord(e.target.value)} />
+          <button className="button-danger w-full" disabled={busy || !ready} onClick={() => post({ action: "mode", mode: "live", confirm: liveWord })}>Passa a soldi veri</button>
         </div>
       ) : (
         <button className="button-secondary w-full" disabled={busy} onClick={() => post({ action: "mode", mode: "paper" })}>Torna a PAPER</button>
@@ -46,7 +46,17 @@ export function ModePanel({ mode, kill, ready, testnet }: { mode: "paper" | "liv
       <button className={kill ? "button-primary w-full" : "button-danger w-full"} disabled={busy} onClick={() => post({ action: "kill", kill: !kill })}>
         {kill ? "Disattiva kill switch" : "Kill switch · ferma gli ordini"}
       </button>
-      {msg && <p className="text-sm text-rose-200">{msg}</p>}
+      <button className="button-secondary w-full" disabled={busy} onClick={async () => {
+        if (!confirm("Cancella TUTTI i cicli e le operazioni del cruscotto (BTC e ETH). Non chiude posizioni su Hyperliquid. Continuare?")) return;
+        setBusy(true); setMsg("");
+        try {
+          const r = await fetch("/api/reset", { method: "POST" });
+          if (!r.ok) setMsg("Azzeramento non riuscito");
+          else { setMsg("Cicli paper azzerati. Ora puoi passare al LIVE."); router.refresh(); }
+        } catch { setMsg("Azzeramento non riuscito"); }
+        finally { setBusy(false); }
+      }}>Azzera cicli paper</button>
+      {msg && <p className="text-sm text-cyan-200">{msg}</p>}
     </div>
   );
 }
