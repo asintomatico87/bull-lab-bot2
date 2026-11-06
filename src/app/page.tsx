@@ -1,17 +1,19 @@
 import { db } from "@/db";
 import { ensureSchema } from "@/db/ensure";
-import { cycles, trades, webhookLogs } from "@/db/schema";
+
 import { desc, eq } from "drizzle-orm";
-import { ModePanel, PineCopy, SizeControl, TestPanel, WebhookUrl } from "./actions";
+import { ModePanel, PineCopy, RsiTestPanel, SiteHeader, SizeControl, SystemLiveToggle, TestPanel, WebhookUrl } from "./actions";
 import { PINE } from "@/lib/pine";
+import { RSI_PINE } from "@/lib/rsi-pine";
 import { getRuntime } from "@/lib/settings";
 import { hlOverview } from "@/lib/hyperliquid";
 import { exposure, money, nextMove, qtyFmt, rungs, utcStamp, type CycleRow, type TradeRow } from "@/lib/desk";
+import { cycles, trades, webhookLogs, rsiCycles, rsiTrades } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
 function SystemCard({
-  symbol, theme, mark, cycle, last, sizeUsd,
+  symbol, theme, mark, cycle, last, sizeUsd, live, ready,
 }: {
   symbol: "BTC" | "ETH";
   theme: "cyan" | "orange";
@@ -19,6 +21,8 @@ function SystemCard({
   cycle?: CycleRow;
   last?: TradeRow;
   sizeUsd: number;
+  live: boolean;
+  ready: boolean;
 }) {
   const open = !!cycle;
   const next = nextMove(cycle);
@@ -31,7 +35,7 @@ function SystemCard({
       </div>
       <div className="flex items-start justify-between gap-4 relative">
         <div>
-          <p className="kicker">{cyan ? "SISTEMA 01" : "SISTEMA 02"}</p>
+          <p className="kicker">{cyan ? "SISTEMA 01 · VAPI 3H" : "SISTEMA 02 · VAPI 3H"}</p>
           <h2 className={`h1 text-4xl md:text-5xl mt-1 ${cyan ? "text-cyan-300" : "text-orange-400"}`}>{symbol}<span className="text-slate-500 text-xl md:text-2xl"> / USDT</span></h2>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-extrabold tracking-wider border ${open ? (cycle?.exitStage ? "border-amber-400 text-amber-200 bg-amber-500/10" : "border-emerald-400 text-emerald-200 bg-emerald-500/10") : "border-slate-500 text-slate-300 bg-slate-800/60"}`}>
@@ -79,6 +83,7 @@ function SystemCard({
       </div>
 
       <SizeControl symbol={symbol} value={sizeUsd} />
+      <SystemLiveToggle system={symbol === "BTC" ? "vapi-btc" : "vapi-eth"} live={live} ready={ready} />
 
       <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300 border-t border-white/5 pt-4">
         <span>Ultimo VAPI: <b className="text-white">{last ? last.vapi.toFixed(2) : "—"}</b></span>
@@ -94,18 +99,26 @@ export default async function Home() {
   const secret = process.env.WEBHOOK_SECRET || "bulllab";
   const runtime = await getRuntime();
   const sizes = runtime.sizes;
+  const rsiSizes = runtime.rsiSizes;
   const hl = runtime.hlAddress ? await hlOverview() : null;
-  const [open, closed, logs, tr] = await Promise.all([
+  const [open, closed, logs, tr, rsiOpen, rsiClosed, rsiTr] = await Promise.all([
     db.select().from(cycles).where(eq(cycles.status, "open")),
     db.select().from(cycles).where(eq(cycles.status, "closed")),
     db.select().from(webhookLogs).orderBy(desc(webhookLogs.id)).limit(18),
     db.select().from(trades).orderBy(desc(trades.id)).limit(24),
+    db.select().from(rsiCycles).where(eq(rsiCycles.status, "open")),
+    db.select().from(rsiCycles).where(eq(rsiCycles.status, "closed")),
+    db.select().from(rsiTrades).orderBy(desc(rsiTrades.id)).limit(20),
   ]);
   const realized = [...open, ...closed].reduce((total, c) => total + c.realizedPnl, 0);
   const lastOf = (s: string) => tr.find((t) => t.symbol === s);
   const btc = open.find((c) => c.symbol === "BTC");
   const eth = open.find((c) => c.symbol === "ETH");
-  const live = logs.some((l) => l.status === "executed") || open.length > 0;
+  const rsiBtcOn = rsiOpen.some((c) => c.symbol === "BTC");
+  const rsiEthOn = rsiOpen.some((c) => c.symbol === "ETH");
+  const systemsOn = [!!btc, !!eth, rsiBtcOn, rsiEthOn].filter(Boolean).length;
+  const liveCount = [runtime.live.vapi.BTC, runtime.live.vapi.ETH, runtime.live.rsi.BTC, runtime.live.rsi.ETH].filter(Boolean).length;
+  const live = liveCount > 0 || logs.some((l) => l.status === "executed") || open.length > 0;
 
   return (
     <main className="stage">
@@ -114,22 +127,7 @@ export default async function Home() {
       <div className="stage-vignette" />
 
       <div className="relative mx-auto max-w-[1280px] px-4 md:px-8 py-6 md:py-8 space-y-6">
-        <header className="glass rounded-[28px] px-5 md:px-7 py-5 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4 min-w-0">
-            <img src="/images/logo.jpg?v=asi3" alt="Bull Lab" width={420} height={140} className="h-20 md:h-24 w-auto max-w-[min(520px,70vw)] object-contain rounded-xl bg-black shrink-0" />
-            <div className="min-w-0">
-              <p className="kicker">Bull Lab · by Asintomatico</p>
-              <p className="h1 text-xl md:text-2xl text-white truncate">VAPI LADDER 3H</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5">
-              <span className="live-dot" />
-              <span className="text-xs font-extrabold tracking-widest text-cyan-200">{runtime.mode === "live" && !runtime.killSwitch ? "LIVE HYPERLIQUID" : live ? "PAPER LIVE" : "PAPER READY"}</span>
-            </div>
-            <img src="/images/profile.jpg?v=asi3" alt="Asintomatico" width={72} height={72} className="w-[72px] h-[72px] rounded-full object-cover bg-slate-800 ring-2 ring-cyan-300/80 shadow-[0_0_24px_rgba(34,211,238,.45)] shrink-0" />
-          </div>
-        </header>
+        <SiteHeader liveLabel={runtime.killSwitch ? "BLOCCATO" : liveCount > 0 ? `${liveCount}/4 LIVE` : live ? "PAPER LIVE" : "PAPER READY"} />
 
         <div className="ticker">
             <span>BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp; BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp;</span>
@@ -144,8 +142,8 @@ export default async function Home() {
             </div>
             <div className="glass rounded-3xl p-5">
               <p className="kicker">Sistemi attivi</p>
-              <p className="metric text-4xl mt-2 text-white">{open.length}<span className="text-xl text-slate-500"> / 2</span></p>
-              <p className="text-slate-400 text-sm mt-2">{btc ? "BTC in posizione" : "BTC flat"} · {eth ? "ETH in posizione" : "ETH flat"}</p>
+              <p className="metric text-4xl mt-2 text-white">{systemsOn}<span className="text-xl text-slate-500"> / 4</span></p>
+              <p className="text-slate-400 text-sm mt-2">VAPI BTC {btc ? "on" : "flat"} · VAPI ETH {eth ? "on" : "flat"} · RSI BTC {rsiBtcOn ? "on" : "flat"} · RSI ETH {rsiEthOn ? "on" : "flat"}</p>
             </div>
             <div className="glass rounded-3xl p-5">
               <p className="kicker">Cicli chiusi</p>
@@ -153,7 +151,7 @@ export default async function Home() {
               <p className="text-slate-400 text-sm mt-2">BTC {money(sizes.BTC)} · ETH {money(sizes.ETH)} USDT</p>
             </div>
           </div>
-          <ModePanel mode={runtime.mode} kill={runtime.killSwitch} ready={runtime.hlReady} testnet={runtime.hlTestnet} />
+          <ModePanel liveCount={liveCount} kill={runtime.killSwitch} ready={runtime.hlReady} testnet={runtime.hlTestnet} />
         </section>
 
         {hl && (
@@ -175,8 +173,57 @@ export default async function Home() {
         )}
 
         <section className="grid lg:grid-cols-2 gap-5" aria-label="I due sistemi">
-          <SystemCard symbol="BTC" theme="cyan" mark="/images/btc-mark.jpg" cycle={btc} last={lastOf("BTC")} sizeUsd={sizes.BTC} />
-          <SystemCard symbol="ETH" theme="orange" mark="/images/eth-mark.jpg" cycle={eth} last={lastOf("ETH")} sizeUsd={sizes.ETH} />
+          <SystemCard symbol="BTC" theme="cyan" mark="/images/btc-mark.jpg" cycle={btc} last={lastOf("BTC")} sizeUsd={sizes.BTC} live={runtime.live.vapi.BTC} ready={runtime.hlReady} />
+          <SystemCard symbol="ETH" theme="orange" mark="/images/eth-mark.jpg" cycle={eth} last={lastOf("ETH")} sizeUsd={sizes.ETH} live={runtime.live.vapi.ETH} ready={runtime.hlReady} />
+        </section>
+
+        <section className="space-y-4">
+          <div>
+            <p className="kicker">Sistemi 03–04 · RSI 45m</p>
+            <h2 className="h1 text-2xl md:text-3xl text-white">RSI 45m · Long & Short</h2>
+            <p className="text-slate-300 mt-1">Leva 1 · long/short al <b>tocco</b> RSI · uscite solo a <b>chiusura candela 45m</b> · 1 ingresso a candela · 1 barra vuota in mezzo · max 6 size. Uscite short: 50% ≤38, resto ≤30.</p>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-5">
+            {(["BTC", "ETH"] as const).map((sym) => {
+              const L = rsiOpen.find((c) => c.symbol === sym && c.side === "long");
+              const S = rsiOpen.find((c) => c.symbol === sym && c.side === "short");
+              const last = rsiTr.find((t) => t.symbol === sym);
+              const units = (L?.units ?? 0) + (S?.units ?? 0);
+              return (
+                <article key={sym} className="glass rounded-[28px] p-6 md:p-8">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="h1 text-3xl">{sym}<span className="text-slate-500 text-lg"> RSI</span></h3>
+                    <span className="text-xs font-bold tracking-wider border border-slate-500 rounded-full px-3 py-1">{units.toFixed(0)}/6 SIZE</span>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4 mt-5">
+                    <div className="rounded-2xl bg-black/30 border border-emerald-500/20 p-4">
+                      <p className="text-emerald-300 font-bold">LONG</p>
+                      <p className="text-sm text-slate-300 mt-1">{L ? `${L.entries}/3 · qty ${qtyFmt(L.qty)}` : "Flat · attende RSI ≤ 23"}</p>
+                      <div className="grid grid-cols-3 gap-2 mt-3 text-[11px] text-slate-400">
+                        {[{ n: 1, lv: "≤23", u: 1 }, { n: 2, lv: "≤18", u: 2 }, { n: 3, lv: "≤13", u: 3 }].map((r) => (
+                          <div key={r.n} className={`rounded-lg p-2 border ${(L?.entries ?? 0) >= r.n ? "border-emerald-400 text-emerald-200" : "border-white/10"}`}>#{r.n} {r.lv}<br />{r.u}×</div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">Uscita 50% ≥50 · resto ≥70</p>
+                    </div>
+                    <div className="rounded-2xl bg-black/30 border border-orange-500/20 p-4">
+                      <p className="text-orange-300 font-bold">SHORT</p>
+                      <p className="text-sm text-slate-300 mt-1">{S ? `${S.entries}/3 · qty ${qtyFmt(S.qty)}` : "Flat · attende RSI ≥ 77"}</p>
+                      <div className="grid grid-cols-3 gap-2 mt-3 text-[11px] text-slate-400">
+                        {[{ n: 1, lv: "≥77", u: 1 }, { n: 2, lv: "≥82", u: 2 }, { n: 3, lv: "≥87", u: 3 }].map((r) => (
+                          <div key={r.n} className={`rounded-lg p-2 border ${(S?.entries ?? 0) >= r.n ? "border-orange-400 text-orange-200" : "border-white/10"}`}>#{r.n} {r.lv}<br />{r.u}×</div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">Uscita 50% ≤38 · resto ≤30</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-400 mt-3">PnL long {money(L?.realizedPnl ?? 0)} · short {money(S?.realizedPnl ?? 0)} · ultimo RSI {last ? last.rsi.toFixed(2) : "—"}</p>
+                  <SizeControl symbol={sym} value={sym === "BTC" ? rsiSizes.BTC : rsiSizes.ETH} book="rsi" />
+                  <SystemLiveToggle system={sym === "BTC" ? "rsi-btc" : "rsi-eth"} live={sym === "BTC" ? runtime.live.rsi.BTC : runtime.live.rsi.ETH} ready={runtime.hlReady} />
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         <section className="grid lg:grid-cols-2 gap-5">
@@ -242,9 +289,18 @@ export default async function Home() {
               </div>
             </div>
             <div>
-              <p className="kicker">Test manuale</p>
+              <p className="kicker">Test manuale VAPI</p>
               <h3 className="text-xl font-bold mt-1">Simulazione — non è il VAPI del grafico</h3>
               <TestPanel secret={secret} />
+            </div>
+            <div>
+              <p className="kicker">RSI 45m</p>
+              <h3 className="text-xl font-bold mt-1">Script Pine · webhook dedicato</h3>
+              <p className="text-slate-300 mt-2">Grafico 45m, indicatore <b>BL_RSI_45</b>. Ingressi al tocco, uscite a chiusura candela. Alert: Any alert() function call. Non tocca gli alert VAPI 3H.</p>
+              <div className="mt-3"><p className="field-label">Webhook RSI</p><WebhookUrl path="/api/webhook/rsi" /></div>
+              <div className="mt-4"><PineCopy pine={RSI_PINE} /></div>
+              <details className="mt-3"><summary className="text-cyan-200">Mostra codice RSI</summary><pre className="mt-3 max-h-80 overflow-auto text-xs bg-black/50 p-4 rounded-2xl">{RSI_PINE}</pre></details>
+              <div className="mt-5"><RsiTestPanel secret={secret} /></div>
             </div>
             <div>
               <p className="kicker">Hyperliquid · soldi veri</p>

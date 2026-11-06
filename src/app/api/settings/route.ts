@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRuntime, setKill, setMode, setSize } from "@/lib/settings";
+import { getRuntime, setKill, setMode, setRsiSize, setSize, setSystemLive, type SystemId } from "@/lib/settings";
 import { hlOverview } from "@/lib/hyperliquid";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,19 @@ export async function POST(req: Request) {
     if (body?.action === "kill") {
       return NextResponse.json({ ok: true, runtime: await setKill(Boolean(body.kill)) });
     }
+    if (body?.action === "systemLive") {
+      const system = String((body as { system?: string }).system) as SystemId;
+      const allowed: SystemId[] = ["vapi-btc", "vapi-eth", "rsi-btc", "rsi-eth"];
+      if (!allowed.includes(system)) return NextResponse.json({ ok: false, error: "sistema non valido" }, { status: 400 });
+      const on = Boolean((body as { live?: boolean }).live);
+      return NextResponse.json({ ok: true, runtime: await setSystemLive(system, on, body.confirm) });
+    }
     const symbol = body?.symbol === "ETH" ? "ETH" : body?.symbol === "BTC" ? "BTC" : null;
     if (!symbol) return NextResponse.json({ ok: false, error: "Richiesta non valida" }, { status: 400 });
+    if ((body as { book?: string })?.book === "rsi") {
+      const sizes = await setRsiSize(symbol, Number(body?.usd));
+      return NextResponse.json({ ok: true, sizes });
+    }
     const sizes = await setSize(symbol, Number(body?.usd));
     return NextResponse.json({ ok: true, sizes });
   } catch (e) {

@@ -113,6 +113,59 @@ body {
 .input-field { background:#070b14; border:1px solid #475569; color:#fff; padding:.55rem .7rem; border-radius:.55rem; min-height:42px; outline:none; font-size:1rem; }
 .input-field:focus { border-color:#3ce7ff; box-shadow:0 0 0 2px rgba(60,231,255,.25); }
 
+.wordmark {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem .7rem;
+}
+.word-bull {
+  font-family: Orbitron, sans-serif;
+  font-weight: 900;
+  font-size: clamp(2.1rem, 5.5vw, 3.5rem);
+  line-height: .9;
+  letter-spacing: -.04em;
+  background: linear-gradient(180deg, #ffffff 0%, #d5dee8 42%, #8ea0b5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(60, 231, 255, .4));
+}
+.word-lab {
+  font-family: Orbitron, sans-serif;
+  font-weight: 900;
+  font-size: clamp(2.1rem, 5.5vw, 3.5rem);
+  line-height: .9;
+  letter-spacing: .02em;
+  color: #140c06;
+  background: linear-gradient(180deg, #ffc56a 0%, #ff7a18 55%, #d45500 100%);
+  padding: .12em .38em .08em;
+  border-radius: .18em;
+  border: 2px solid #ffd089;
+  box-shadow: 0 0 0 1px #7a2e00, 0 0 28px rgba(255, 122, 24, .55);
+}
+.word-sub {
+  width: 100%;
+  font-size: .72rem;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  font-weight: 700;
+}
+.avatar-fallback {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-family: Orbitron, sans-serif;
+  font-weight: 800;
+  color: #67e8f9;
+  background: radial-gradient(circle at 30% 20%, #1b3a4a, #071018);
+  border: 2px solid #67e8f9;
+  box-shadow: 0 0 22px rgba(34, 211, 238, .4);
+}
+
 .ticker {
   overflow: hidden;
   white-space: nowrap;

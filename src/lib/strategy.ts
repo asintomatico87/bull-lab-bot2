@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { cycles, trades } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { getRuntime, getSizes } from "@/lib/settings";
+import { gateSystemLive, getSizes } from "@/lib/settings";
 import { placeMarket } from "@/lib/hyperliquid";
 
 // ============================================================
@@ -42,13 +42,8 @@ async function getOpenCycle(symbol: string) {
   return c;
 }
 
-async function gateLive(forcePaper?: boolean) {
-  if (forcePaper) return { live: false as const };
-  const r = await getRuntime();
-  if (r.mode !== "live") return { live: false as const };
-  if (r.killSwitch) return { live: false as const, block: "Kill switch attivo: nessun ordine inviato" };
-  if (!r.hlReady) return { live: false as const, block: "LIVE ma mancano HL_AGENT_PRIVATE_KEY e HL_ACCOUNT_ADDRESS su Vercel" };
-  return { live: true as const };
+async function gateLive(symbol: "BTC" | "ETH", forcePaper?: boolean) {
+  return gateSystemLive("vapi", symbol, forcePaper);
 }
 
 export async function processSignal(s: Signal, opts?: { forcePaper?: boolean }): Promise<{ status: string; reason: string }> {
@@ -73,7 +68,7 @@ export async function processSignal(s: Signal, opts?: { forcePaper?: boolean }):
     const usd = (coin === "ETH" ? sizes.ETH : sizes.BTC) * SIZES[entries];
     let qty = usd / s.price;
     let px = s.price;
-    const gate = await gateLive(opts?.forcePaper);
+    const gate = await gateLive(coin, opts?.forcePaper);
     if (gate.block) return { status: "error", reason: gate.block };
     const live = gate.live;
     if (live) {
@@ -122,7 +117,7 @@ export async function processSignal(s: Signal, opts?: { forcePaper?: boolean }):
 
   let soldQty = c.qty * step.frac;
   let px = s.price;
-  const gate = await gateLive(opts?.forcePaper);
+  const gate = await gateLive(coin, opts?.forcePaper);
   if (gate.block) return { status: "error", reason: gate.block };
   const live = gate.live;
   if (live) {

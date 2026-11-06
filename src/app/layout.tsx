@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bull Lab Command Center — VAPI Ladder 3H",
+  title: "Bull Lab Command Center — Trading Automatizzato",
   description: "Cruscotto paper BTC ed ETH · VAPI LazyBear 3H · Bull Lab by Asintomatico",
 };
 
