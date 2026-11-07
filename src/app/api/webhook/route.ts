@@ -3,9 +3,10 @@ import { db } from "@/db";
 import { ensureSchema } from "@/db/ensure";
 import { webhookLogs } from "@/db/schema";
 import { processSignal, type Signal } from "@/lib/strategy";
+import { WEBHOOK_SECRET } from "@/lib/secret";
 
 export const dynamic = "force-dynamic";
-const SECRET = process.env.WEBHOOK_SECRET || "bulllab";
+const SECRET = WEBHOOK_SECRET;
 
 async function log(raw: string, status: string, reason: string) {
   await db.insert(webhookLogs).values({ raw: raw.slice(0, 4000), status, reason });

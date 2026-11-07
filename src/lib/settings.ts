@@ -4,6 +4,7 @@ import { appSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hlConfigured, hlPublicAddress } from "@/lib/hyperliquid";
 
+
 const FALLBACK = Number(process.env.BASE_USD || 500);
 
 export type Sizes = { BTC: number; ETH: number };
@@ -82,6 +83,7 @@ const LIVE_COL: Record<SystemId, "liveVapiBtc" | "liveVapiEth" | "liveRsiBtc" | 
 export async function setSystemLive(system: SystemId, on: boolean, confirm?: string) {
   if (on) {
     if (confirm !== "LIVE") throw new Error("Per attivare il LIVE scrivi LIVE nel campo di conferma");
+
     if (!hlConfigured()) throw new Error("Prima configura HL_AGENT_PRIVATE_KEY e HL_ACCOUNT_ADDRESS su Vercel");
   }
   await row();

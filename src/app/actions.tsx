@@ -2,8 +2,56 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+type PriceState = { BTC: number | null; ETH: number | null; prevBTC: number | null; prevETH: number | null; ok: boolean };
+
+function PriceBox({ coin, price, prev, tone }: { coin: string; price: number | null; prev: number | null; tone: "cyan" | "orange" }) {
+  const up = price !== null && prev !== null && price > prev;
+  const down = price !== null && prev !== null && price < prev;
+  const fmt = (n: number) => n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <div className={`glass rounded-2xl px-5 py-3 flex items-center justify-between gap-4 ${tone === "cyan" ? "glass-cyan" : "glass-orange"}`}>
+      <div>
+        <p className="kicker">{coin} / USDC · Hyperliquid</p>
+        <p className={`metric text-3xl md:text-4xl mt-1 ${up ? "text-emerald-300" : down ? "text-rose-300" : "text-white"}`}>
+          {price !== null ? `${fmt(price)} $` : "—"}
+        </p>
+      </div>
+      <span className={`text-2xl font-black ${up ? "text-emerald-300" : down ? "text-rose-300" : "text-slate-600"}`}>{up ? "▲" : down ? "▼" : "•"}</span>
+    </div>
+  );
+}
+
+export function LivePrices() {
+  const [p, setP] = useState<PriceState>({ BTC: null, ETH: null, prevBTC: null, prevETH: null, ok: true });
+  useEffect(() => {
+    let alive = true;
+    async function tick() {
+      try {
+        const r = await fetch("/api/prices", { cache: "no-store" });
+        const j = await r.json();
+        if (!alive) return;
+        if (j.ok) setP((o) => ({ BTC: j.BTC, ETH: j.ETH, prevBTC: o.BTC, prevETH: o.ETH, ok: true }));
+        else setP((o) => ({ ...o, ok: false }));
+      } catch {
+        if (alive) setP((o) => ({ ...o, ok: false }));
+      }
+    }
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return (
+    <section aria-label="Prezzi in tempo reale" className="space-y-2">
+      <div className="grid md:grid-cols-2 gap-4">
+        <PriceBox coin="BTC" price={p.BTC} prev={p.prevBTC} tone="cyan" />
+        <PriceBox coin="ETH" price={p.ETH} prev={p.prevETH} tone="orange" />
+      </div>
+      {!p.ok && <p className="text-xs text-amber-200">Prezzo momentaneamente non disponibile, riprovo tra pochi secondi.</p>}
+    </section>
+  );
+}
+
 export function SiteHeader({ liveLabel }: { liveLabel: string }) {
-  const [photo, setPhoto] = useState(true);
   return (
     <header className="rounded-[28px] px-5 md:px-8 py-6 md:py-7 flex items-center justify-between gap-5 flex-wrap border border-orange-400/25 bg-gradient-to-r from-[#061018] via-[#0b1220] to-[#1a0e06]">
       <div className="wordmark">
@@ -17,11 +65,6 @@ export function SiteHeader({ liveLabel }: { liveLabel: string }) {
           <span className="live-dot" />
           <span className="text-xs font-extrabold tracking-widest text-cyan-200">{liveLabel}</span>
         </div>
-        {photo ? (
-          <img src="/images/profile.jpg?v=asi4" alt="Asintomatico" width={72} height={72} className="w-[72px] h-[72px] rounded-full object-cover ring-2 ring-cyan-300/80 shrink-0" onError={() => setPhoto(false)} />
-        ) : (
-          <div className="avatar-fallback" aria-label="Asintomatico">ASI</div>
-        )}
       </div>
     </header>
   );
@@ -62,6 +105,7 @@ export function SystemLiveToggle({ system, live, ready }: { system: "vapi-btc" |
         <>
           <input className="input-field w-full" placeholder="Scrivi LIVE" value={word} onChange={(e) => setWord(e.target.value)} />
           <button className="button-danger w-full" disabled={busy || !ready} onClick={() => go(true)}>Passa a soldi veri</button>
+          {!ready && <p className="text-xs text-slate-400">Si attiva appena su Vercel sono presenti HL_ACCOUNT_ADDRESS e HL_AGENT_PRIVATE_KEY.</p>}
         </>
       )}
       {msg && <p className="text-xs text-rose-200">{msg}</p>}

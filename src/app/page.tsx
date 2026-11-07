@@ -2,13 +2,14 @@ import { db } from "@/db";
 import { ensureSchema } from "@/db/ensure";
 
 import { desc, eq } from "drizzle-orm";
-import { ModePanel, PineCopy, RsiTestPanel, SiteHeader, SizeControl, SystemLiveToggle, TestPanel, WebhookUrl } from "./actions";
+import { LivePrices, ModePanel, PineCopy, RsiTestPanel, SiteHeader, SizeControl, SystemLiveToggle, TestPanel, WebhookUrl } from "./actions";
 import { PINE } from "@/lib/pine";
 import { RSI_PINE } from "@/lib/rsi-pine";
 import { getRuntime } from "@/lib/settings";
 import { hlOverview } from "@/lib/hyperliquid";
 import { exposure, money, nextMove, qtyFmt, rungs, utcStamp, type CycleRow, type TradeRow } from "@/lib/desk";
 import { cycles, trades, webhookLogs, rsiCycles, rsiTrades } from "@/db/schema";
+import { WEBHOOK_SECRET } from "@/lib/secret";
 
 export const dynamic = "force-dynamic";
 
@@ -96,7 +97,7 @@ function SystemCard({
 
 export default async function Home() {
   await ensureSchema();
-  const secret = process.env.WEBHOOK_SECRET || "bulllab";
+  const secret = WEBHOOK_SECRET;
   const runtime = await getRuntime();
   const sizes = runtime.sizes;
   const rsiSizes = runtime.rsiSizes;
@@ -128,6 +129,8 @@ export default async function Home() {
 
       <div className="relative mx-auto max-w-[1280px] px-4 md:px-8 py-6 md:py-8 space-y-6">
         <SiteHeader liveLabel={runtime.killSwitch ? "BLOCCATO" : liveCount > 0 ? `${liveCount}/4 LIVE` : live ? "PAPER LIVE" : "PAPER READY"} />
+
+        <LivePrices />
 
         <div className="ticker">
             <span>BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp; BULL LAB · POWERED BY ALTCOINITALIA · BTC + ETH · 3H · MAX 3 BUY · NO STOP LOSS · BUY INTRABAR · SELL A CHIUSURA · SIZE DAL CRUSCOTTO · PAPER O LIVE HYPERLIQUID &nbsp;&nbsp;&nbsp;</span>
